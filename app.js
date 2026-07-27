@@ -1,9 +1,11 @@
-// GoTransfer — Ultrafast Cloud Uploader
-// Hardcoded Folder ID: 8ddcc1cc-3f35-400e-b77f-538059274ddf
-// All files uploaded from any device automatically land in YOUR Gofile Account folder!
+// GoTransfer — Official Gofile.io API v2 Integration
+// Global Endpoint: https://upload.gofile.io/uploadfile
+// Hardcoded Destination Folder ID: 8ddcc1cc-3f35-400e-b77f-538059274ddf
 
 const DEFAULT_FOLDER_ID = '8ddcc1cc-3f35-400e-b77f-538059274ddf';
-const FILES_KEY = 'gotransfer_files';
+const UPLOAD_ENDPOINT   = 'https://upload.gofile.io/uploadfile';
+const DELETE_ENDPOINT   = 'https://api.gofile.io/contents';
+const FILES_KEY         = 'gotransfer_files';
 
 let uploadQueue = [];
 let isUploading = false;
@@ -13,7 +15,19 @@ let currentXHR  = null;
 window.onload = () => {
   renderFilesList();
   setupDropzone();
+  loadSavedToken();
 };
+
+function loadSavedToken() {
+  const token = localStorage.getItem('gofile_token');
+  const folder = localStorage.getItem('gofile_folder_id');
+  if (token && document.getElementById('gofileTokenInput')) {
+    document.getElementById('gofileTokenInput').value = token;
+  }
+  if (folder && document.getElementById('gofileFolderInput')) {
+    document.getElementById('gofileFolderInput').value = folder;
+  }
+}
 
 // ─── Dropzone ─────────────────────────────────────────────────────────────────
 function setupDropzone() {
@@ -44,12 +58,16 @@ function saveAccountSettings() {
   const token = document.getElementById('gofileTokenInput').value.trim();
   const folder = document.getElementById('gofileFolderInput').value.trim();
   if (token) localStorage.setItem('gofile_token', token);
+  else localStorage.removeItem('gofile_token');
+  
   if (folder) localStorage.setItem('gofile_folder_id', folder);
+  else localStorage.removeItem('gofile_folder_id');
+
   showToast('✅ Saved settings!', 'success');
   toggleSettings();
 }
 
-// ─── Queue ────────────────────────────────────────────────────────────────────
+// ─── Queue & Upload ───────────────────────────────────────────────────────────
 function queueFiles(files) {
   for (const f of files) uploadQueue.push(f);
   if (!isUploading) processQueue();
@@ -65,38 +83,26 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Upload to YOUR Gofile Folder ─────────────────────────────────────────────
+// ─── Official Gofile Upload Engine ────────────────────────────────────────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    // 1. Fetch active Gofile upload server
-    const serverResp = await fetch('https://api.gofile.io/servers');
-    const serverData = await serverResp.json().catch(() => ({}));
-    
-    let serverName = 'store1';
-    if (serverData.status === 'ok' && serverData.data && serverData.data.servers && serverData.data.servers.length) {
-      serverName = serverData.data.servers[0].name;
+    const userToken = localStorage.getItem('gofile_token') || '';
+    const folderId = localStorage.getItem('gofile_folder_id') || DEFAULT_FOLDER_ID;
+
+    // Build Multipart FormData according to Gofile API Specification
+    const formData = new FormData();
+    formData.append('file', file);
+    if (folderId) {
+      formData.append('folderId', folderId);
     }
 
-    const uploadUrl = `https://${serverName}.gofile.io/contents/uploadfile`;
-    const userToken = localStorage.getItem('gofile_token') || '';
-    const folderId = localStorage.getItem('gofile_folder_id') || '';
-
-    // 2. Upload file via FormData cleanly (preventing 401 Unauthorized)
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       currentXHR = xhr;
-      const formData = new FormData();
-      formData.append('file', file);
-      if (userToken) {
-        formData.append('token', userToken);
-        if (folderId || DEFAULT_FOLDER_ID) {
-          formData.append('folderId', folderId || DEFAULT_FOLDER_ID);
-        }
-      }
 
       let startTime = Date.now();
       let lastUploaded = 0;
@@ -123,14 +129,25 @@ async function uploadFile(file) {
           try { resolve(JSON.parse(xhr.responseText)); }
           catch (err) { reject(new Error('Invalid response from server')); }
         } else {
-          reject(new Error(`Server error HTTP ${xhr.status}`));
+          try {
+            const errJson = JSON.parse(xhr.responseText);
+            reject(new Error(errJson.message || `HTTP ${xhr.status}`));
+          } catch {
+            reject(new Error(`Server error HTTP ${xhr.status}`));
+          }
         }
       };
 
       xhr.onerror = () => reject(new Error('Network error during upload'));
       xhr.onabort = () => reject(new Error('Upload cancelled'));
 
-      xhr.open('POST', uploadUrl, true);
+      xhr.open('POST', UPLOAD_ENDPOINT, true);
+
+      // Official Authorization Header
+      if (userToken) {
+        xhr.setRequestHeader('Authorization', 'Bearer ' + userToken);
+      }
+
       xhr.send(formData);
     });
 
@@ -153,8 +170,8 @@ async function uploadFile(file) {
     });
 
     showResult(
-      `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded to your folder! ` +
-      `<a href="${downloadPage}" target="_blank" class="link">View Folder / Link →</a>`,
+      `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded successfully! ` +
+      `<a href="${downloadPage}" target="_blank" class="link">Get Download Link →</a>`,
       'success'
     );
 
@@ -178,7 +195,36 @@ function cancelUpload() {
   uploadQueue = [];
 }
 
-// ─── File Records (localStorage) ──────────────────────────────────────────────
+// ─── Delete File via Gofile API ───────────────────────────────────────────────
+async function deleteFile(fileId, btn) {
+  const userToken = localStorage.getItem('gofile_token') || '';
+  
+  if (!confirm('Delete this file?')) return;
+  if (btn) { btn.classList.add('deleting'); btn.textContent = '...'; }
+
+  if (userToken) {
+    try {
+      const resp = await fetch(DELETE_ENDPOINT, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': 'Bearer ' + userToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ contentsId: fileId })
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (data.status === 'ok') {
+        showToast('🗑️ File deleted from Gofile.', 'success');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  removeFileRecord(fileId);
+}
+
+// ─── Local File Records ───────────────────────────────────────────────────────
 function getFileRecords() {
   try { return JSON.parse(localStorage.getItem(FILES_KEY)) || []; }
   catch { return []; }
@@ -225,7 +271,7 @@ function renderFilesList() {
         </div>
         <div class="file-actions">
           <a href="${r.url}" target="_blank" class="btn-sm btn-view">Link</a>
-          <button class="btn-sm btn-delete" onclick="removeFileRecord('${r.id}')">🗑️</button>
+          <button class="btn-sm btn-delete" onclick="deleteFile('${r.id}', this)">🗑️</button>
         </div>
       </div>`;
   }).join('');
