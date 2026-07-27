@@ -96,8 +96,10 @@ async function uploadFile(file) {
     // Build Multipart FormData according to Gofile API Specification
     const formData = new FormData();
     formData.append('file', file);
-    if (folderId) {
-      formData.append('folderId', folderId);
+    
+    // Gofile API Requirement: folderId requires an Authorization Bearer token
+    if (userToken) {
+      if (folderId) formData.append('folderId', folderId);
     }
 
     const result = await new Promise((resolve, reject) => {
