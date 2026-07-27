@@ -56,23 +56,18 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Official Pixeldrain Direct POST Upload (Unlimited Size & Speed) ─────────
+// ─── Direct High-Speed Upload via Vercel Edge Streaming Proxy ──────────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    const apiKey = '969ca829-a330-44af-a95a-473ae11cd1cb';
-    const uploadUrl = 'https://pixeldrain.com/api/file';
+    const uploadUrl = `/api/upload?name=${encodeURIComponent(file.name)}`;
 
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       currentXHR = xhr;
-
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('name', file.name);
 
       let startTime = Date.now();
       let lastUploaded = 0;
@@ -108,12 +103,12 @@ async function uploadFile(file) {
         }
       };
 
-      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.onerror = () => reject(new Error('Network connection error'));
       xhr.onabort = () => reject(new Error('Upload cancelled'));
 
-      xhr.open('POST', uploadUrl, true);
-      xhr.setRequestHeader('Authorization', 'Basic ' + btoa(':' + apiKey));
-      xhr.send(formData);
+      xhr.open('PUT', uploadUrl, true);
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      xhr.send(file);
     });
 
     if (!result.success || !result.id) {
