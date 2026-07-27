@@ -17,6 +17,7 @@ export default async function handler(req, res) {
     const jsonResponse = await handleUpload({
       body: req.body,
       request: req,
+      token: process.env.BLOB_READ_WRITE_TOKEN,
       onBeforeGenerateToken: async (pathname) => {
         return {
           allowedContentTypes: [
