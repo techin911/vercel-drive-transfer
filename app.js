@@ -50,38 +50,44 @@ async function processQueue() {
   else isUploading = false;
 }
 
+const GAS_FALLBACK_URL = 'https://script.google.com/macros/s/AKfycbxGkTG1RY0clqJC52ckCCTU2zQWKUGtT-frIr0a3KZi9_2LbcNXClbxOYSh_xGX5SyYNw/exec';
+
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    // 1. Get Resumable Upload Session URL from Vercel API Route
-    const sessionResp = await fetch('/api/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: file.name,
-        size: file.size,
-        type: file.type || 'application/octet-stream'
-      })
-    });
+    let uploadUrl = GAS_FALLBACK_URL;
+    let mode = 'webhook';
 
-    if (!sessionResp.ok) {
-      const errData = await sessionResp.json().catch(() => ({}));
-      throw new Error(errData.error || `Server Error HTTP ${sessionResp.status}`);
+    try {
+      const sessionResp = await fetch('/api/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: file.name,
+          size: file.size,
+          type: file.type || 'application/octet-stream'
+        })
+      });
+
+      if (sessionResp.ok) {
+        const data = await sessionResp.json().catch(() => ({}));
+        if (data.uploadUrl) {
+          uploadUrl = data.uploadUrl;
+          mode = data.mode || 'webhook';
+        }
+      }
+    } catch (e) {
+      console.warn('Using direct fallback endpoint');
     }
-
-    const { uploadUrl, mode } = await sessionResp.json();
-    if (!uploadUrl) throw new Error('No upload session URL received');
 
     let fileData = {};
 
     if (mode === 'webhook') {
-      // Chunked Webhook Upload to prevent browser memory crashes on large files (200MB+)
       fileData = await uploadWebhookInChunks(file, uploadUrl);
     } else {
-      // Direct Resumable Chunked Upload
       fileData = await uploadChunks(file, uploadUrl);
     }
 
