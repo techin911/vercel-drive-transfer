@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PixelTransfer — Powered by Pixeldrain</title>
-  <meta name="description" content="Fast, secure file uploads directly to Pixeldrain cloud storage.">
+  <title>PixelTransfer — Fast File Transfer</title>
+  <meta name="description" content="Fast, secure direct file transfer and cloud storage.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
   <link rel="stylesheet" href="style.css">
@@ -29,13 +29,13 @@
         </div>
         <div class="brand-text">
           <h1>PixelTransfer</h1>
-          <p>Pixeldrain Cloud Storage &bull; techin911</p>
+          <p>Fast Direct File Transfer</p>
         </div>
       </div>
       <div class="header-right">
         <div class="status-badge">
           <span class="pulse-dot"></span>
-          <span>Pixeldrain Connected</span>
+          <span>Storage Active</span>
         </div>
       </div>
     </header>
@@ -45,7 +45,7 @@
       <!-- Upload Panel -->
       <section class="card upload-card">
         <div class="card-header">
-          <span class="card-title">📁 Upload to Pixeldrain</span>
+          <span class="card-title">📁 File Upload</span>
           <span id="uploadStatusBadge" class="badge badge-ready">Ready</span>
         </div>
 
@@ -67,7 +67,7 @@
               </svg>
             </div>
             <h3 class="dz-title">Drag & Drop Files Here</h3>
-            <p class="dz-sub">Click to select files &bull; Fast Pixeldrain Cloud</p>
+            <p class="dz-sub">Click to select files &bull; Any size supported</p>
             <div class="dz-btn">Choose Files</div>
           </div>
         </div>
@@ -96,14 +96,14 @@
       <!-- Files Panel -->
       <aside class="card files-card">
         <div class="card-header">
-          <span class="card-title">⚡ My Pixeldrain Files</span>
-          <button class="icon-btn-sm" onclick="clearAllFiles()" title="Clear local list">🗑️</button>
+          <span class="card-title">⚡ My Files</span>
+          <button class="icon-btn-sm" onclick="clearAllFiles()" title="Clear list">🗑️</button>
         </div>
         <div id="filesList" class="files-list">
           <div class="empty-state">
             <div class="empty-icon">📂</div>
             <p>No files uploaded yet.</p>
-            <p class="empty-sub">Files uploaded to your Pixeldrain account will appear here.</p>
+            <p class="empty-sub">Completed files and their links will appear here.</p>
           </div>
         </div>
       </aside>
