@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DriveTransfer — Upload Files Directly to Google Drive</title>
+  <meta name="description" content="Instantly upload any file from your browser directly to Google Drive. Free, fast, secure.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>DriveTransfer</h1>
+          <p>Upload → Google Drive instantly</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <button id="btnSettings" class="icon-btn" onclick="toggleSettings()" title="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+          </svg>
+        </button>
+        <div id="statusDot" class="status-dot unconfigured" title="Not configured"></div>
+      </div>
+    </header>
+
+    <!-- Settings Panel -->
+    <div id="settingsPanel" class="settings-panel hidden">
+      <div class="settings-title">⚙️ Google Drive Configuration</div>
+      <div class="settings-body">
+        <label class="input-label">Google Apps Script Webhook URL</label>
+        <input type="text" id="gasUrlInput" class="text-input" placeholder="https://script.google.com/macros/s/.../exec" />
+        <p class="hint">Paste your Google Apps Script Web App URL. <a href="https://script.google.com" target="_blank" class="link">Get it here →</a></p>
+        <button class="btn-primary" onclick="saveSettings()">Save & Connect</button>
+      </div>
+    </div>
+
+    <!-- Main Grid -->
+    <main class="main-grid">
+      <!-- Upload Panel -->
+      <section class="card upload-card">
+        <div class="card-header">
+          <span class="card-title">📁 Upload to Google Drive</span>
+          <span id="uploadStatusBadge" class="badge badge-ready">Ready</span>
+        </div>
+
+        <!-- Dropzone -->
+        <div id="dropzone" class="dropzone" onclick="document.getElementById('fileInput').click()">
+          <input type="file" id="fileInput" multiple style="display:none" onchange="handleFileSelect(event)">
+          <div class="dropzone-inner">
+            <div class="dropzone-icon" id="dzIcon">
+              <svg viewBox="0 0 64 64" fill="none">
+                <circle cx="32" cy="32" r="30" stroke="url(#g1)" stroke-width="2" stroke-dasharray="6 3"/>
+                <defs>
+                  <linearGradient id="g1" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#00f2fe"/>
+                    <stop offset="1" stop-color="#9d4edd"/>
+                  </linearGradient>
+                </defs>
+                <path d="M32 20v16M24 28l8-8 8 8" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round"/>
+                <path d="M22 42h20" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3 class="dz-title">Drag & Drop Files Here</h3>
+            <p class="dz-sub">Or click to browse • Any file type • Up to 30 MB</p>
+            <div class="dz-btn">Choose Files</div>
+          </div>
+        </div>
+
+        <!-- Progress Section -->
+        <div id="progressSection" class="progress-section hidden">
+          <div class="progress-info">
+            <span id="progressFileName" class="progress-name">file.zip</span>
+            <span id="progressPct" class="progress-pct">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+          <div class="progress-stats">
+            <span id="progressSpeed">0 MB/s</span>
+            <span id="progressEta">--</span>
+          </div>
+        </div>
+
+        <!-- Upload Result -->
+        <div id="uploadResult" class="upload-result hidden"></div>
+      </section>
+
+      <!-- Files Panel -->
+      <aside class="card files-card">
+        <div class="card-header">
+          <span class="card-title">☁️ My Drive Files</span>
+          <button class="icon-btn-sm" onclick="clearAllFiles()" title="Clear all records">🗑️</button>
+        </div>
+        <div id="filesList" class="files-list">
+          <div class="empty-state">
+            <div class="empty-icon">📂</div>
+            <p>No files uploaded yet.</p>
+            <p class="empty-sub">Upload a file to see it here.</p>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- GAS Script Guide -->
+    <div class="guide-card card">
+      <div class="guide-header" onclick="toggleGuide()">
+        <span>📋 Setup Guide — Google Apps Script (1 min)</span>
+        <span id="guideToggleIcon">▼</span>
+      </div>
+      <div id="guideBody" class="guide-body hidden">
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+              <strong>Open <a href="https://script.google.com" target="_blank" class="link">script.google.com</a></strong> and click <em>New Project</em>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+              <strong>Paste this script</strong> (replaces existing code):
+              <pre class="code-block" id="gasScriptBlock">function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var action = data.action || 'upload';
+
+    if (action === 'delete') {
+      DriveApp.getFileById(data.fileId).setTrashed(true);
+      return ok({ status: 'deleted' });
+    }
+
+    var bytes = Utilities.base64Decode(data.content);
+    var blob = Utilities.newBlob(bytes, getMime(data.name), data.name);
+    var file = DriveApp.createFile(blob);
+    return ok({
+      status: 'success',
+      fileId: file.getId(),
+      fileName: file.getName(),
+      fileUrl: 'https://drive.google.com/file/d/' + file.getId() + '/view'
+    });
+  } catch(err) {
+    return ok({ status: 'error', message: err.toString() });
+  }
+}
+function ok(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+function getMime(n) {
+  var m = {jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',
+    pdf:'application/pdf',mp4:'video/mp4',mp3:'audio/mpeg',zip:'application/zip',
+    txt:'text/plain',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'};
+  return m[(n||'').split('.').pop().toLowerCase()] || 'application/octet-stream';
+}</pre>
+              <button class="btn-copy" onclick="copyScript()">📋 Copy Script</button>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+              Click <strong>Deploy → New deployment → Web app</strong><br>
+              Set: <em>Execute as: Me</em> &nbsp;•&nbsp; <em>Who has access: Anyone</em><br>
+              Copy the <strong>Web App URL</strong>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-content">
+              Click the <strong>⚙️ Settings</strong> button above and paste your URL → Save & Connect
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
