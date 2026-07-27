@@ -83,16 +83,20 @@ async function uploadFile(file) {
 
     const uploadUrl = `https://${serverName}.gofile.io/contents/uploadfile`;
     const userToken = localStorage.getItem('gofile_token') || '';
-    const folderId = localStorage.getItem('gofile_folder_id') || DEFAULT_FOLDER_ID;
+    const folderId = localStorage.getItem('gofile_folder_id') || '';
 
-    // 2. Upload file via FormData directly to YOUR folderId
+    // 2. Upload file via FormData cleanly (preventing 401 Unauthorized)
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       currentXHR = xhr;
       const formData = new FormData();
       formData.append('file', file);
-      if (folderId) formData.append('folderId', folderId);
-      if (userToken) formData.append('token', userToken);
+      if (userToken) {
+        formData.append('token', userToken);
+        if (folderId || DEFAULT_FOLDER_ID) {
+          formData.append('folderId', folderId || DEFAULT_FOLDER_ID);
+        }
+      }
 
       let startTime = Date.now();
       let lastUploaded = 0;
