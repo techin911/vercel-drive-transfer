@@ -98,7 +98,7 @@ body {
 }
 .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
 .card-title { font-size: 15px; font-weight: 600; }
-.title-with-channel { display: flex; align-items: center; gap: 12px; }
+.title-with-channel, .title-with-badge { display: flex; align-items: center; gap: 12px; }
 
 /* Video Wrapper */
 .video-wrapper {

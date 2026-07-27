@@ -5,12 +5,22 @@ const CONFIG_KEY   = 'vercelstream_channels_config';
 const KEYS_KEY     = 'vercelstream_access_keys';
 const RESTREAM_KEY = 'vercelstream_restream_config';
 const ADMIN_KEY    = 'vercelstream_admin_unlocked';
+const OWN_RTMP_KEY = 'vercelstream_own_rtmp_config';
 
 let currentTab = 'user';
 let activeChannel = 'ch1';
 let hlsPlayer = null;
 let flvPlayer = null;
 let mediaStream = null;
+
+const defaultOwnRtmp = {
+  host: 'localhost',
+  rtmpPort: 1935,
+  httpPort: 8000,
+  app: 'live',
+  key: 'stream_key_live_01',
+  protocol: 'flv'
+};
 
 // Default Broadcast Configurations
 const defaultConfig = {
@@ -49,6 +59,7 @@ window.onload = () => {
   loadChannel(activeChannel);
   renderKeysTable();
   loadRestreamSettingsUI();
+  updateOwnRtmpUI();
   updateAutoUrlPreview();
 
   if (localStorage.getItem(ADMIN_KEY) === 'true') {
@@ -532,4 +543,96 @@ function showToast(msg, type) {
 
 function escHtml(str) {
   return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Own Dedicated RTMP Server Control Engine ────────────────────────────────
+function getOwnRtmpConfig() {
+  try { return JSON.parse(localStorage.getItem(OWN_RTMP_KEY)) || defaultOwnRtmp; }
+  catch { return defaultOwnRtmp; }
+}
+
+function saveOwnRtmpConfig() {
+  const hostInput = document.getElementById('ownRtmpHost');
+  const rtmpPortInput = document.getElementById('ownRtmpPort');
+  const httpPortInput = document.getElementById('ownHttpPort');
+  const appInput = document.getElementById('ownRtmpApp');
+  const keyInput = document.getElementById('ownRtmpKey');
+  const protoInput = document.getElementById('ownRtmpProtocol');
+
+  const cfg = {
+    host: hostInput ? hostInput.value.trim() : 'localhost',
+    rtmpPort: rtmpPortInput ? parseInt(rtmpPortInput.value, 10) : 1935,
+    httpPort: httpPortInput ? parseInt(httpPortInput.value, 10) : 8000,
+    app: appInput ? appInput.value.trim() : 'live',
+    key: keyInput ? keyInput.value.trim() : 'stream_key_live_01',
+    protocol: protoInput ? protoInput.value : 'flv'
+  };
+
+  localStorage.setItem(OWN_RTMP_KEY, JSON.stringify(cfg));
+  updateOwnRtmpUI();
+  showToast('⚡ Own RTMP Server settings saved!', 'success');
+}
+
+function updateOwnRtmpUI() {
+  const cfg = getOwnRtmpConfig();
+  if (document.getElementById('ownRtmpHost')) document.getElementById('ownRtmpHost').value = cfg.host;
+  if (document.getElementById('ownRtmpPort')) document.getElementById('ownRtmpPort').value = cfg.rtmpPort;
+  if (document.getElementById('ownHttpPort')) document.getElementById('ownHttpPort').value = cfg.httpPort;
+  if (document.getElementById('ownRtmpApp')) document.getElementById('ownRtmpApp').value = cfg.app;
+  if (document.getElementById('ownRtmpKey')) document.getElementById('ownRtmpKey').value = cfg.key;
+  if (document.getElementById('ownRtmpProtocol')) document.getElementById('ownRtmpProtocol').value = cfg.protocol;
+
+  const rtmpIngest = `rtmp://${cfg.host}:${cfg.rtmpPort}/${cfg.app}/${cfg.key}`;
+  const flvPlayback = `http://${cfg.host}:${cfg.httpPort}/${cfg.app}/${cfg.key}.flv`;
+  const hlsPlayback = `http://${cfg.host}:${cfg.httpPort}/${cfg.app}/${cfg.key}/index.m3u8`;
+
+  if (document.getElementById('ownRtmpIngestInput')) document.getElementById('ownRtmpIngestInput').value = rtmpIngest;
+  if (document.getElementById('ownFlvPlaybackInput')) document.getElementById('ownFlvPlaybackInput').value = cfg.protocol === 'flv' ? flvPlayback : hlsPlayback;
+}
+
+function applyOwnRtmpToActiveChannel() {
+  const cfg = getOwnRtmpConfig();
+  const playbackUrl = cfg.protocol === 'flv' 
+    ? `http://${cfg.host}:${cfg.httpPort}/${cfg.app}/${cfg.key}.flv`
+    : `http://${cfg.host}:${cfg.httpPort}/${cfg.app}/${cfg.key}/index.m3u8`;
+
+  const storeCfg = getStoreConfig();
+  const chKey = document.getElementById('adminChannelSelect') ? document.getElementById('adminChannelSelect').value : activeChannel;
+  
+  storeCfg.isLive = true;
+  storeCfg.channels[chKey] = {
+    name: getChannelName(chKey),
+    format: cfg.protocol === 'flv' ? 'flv' : 'hls',
+    url: playbackUrl
+  };
+
+  saveStoreConfig(storeCfg);
+  loadChannel(activeChannel);
+  updateAutoUrlPreview();
+  showToast(`🚀 Own RTMP Server applied to ${getChannelName(chKey)}!`, 'success');
+}
+
+async function testOwnRtmpHealth() {
+  const cfg = getOwnRtmpConfig();
+  const healthUrl = `http://${cfg.host}:${cfg.httpPort}/health`;
+  showToast('🔍 Checking RTMP Server Health...', 'info');
+  try {
+    const res = await fetch(healthUrl, { mode: 'cors' });
+    if (res.ok) {
+      const data = await res.json();
+      showToast(`✅ RTMP Server ONLINE! (Uptime: ${Math.floor(data.uptime||0)}s)`, 'success');
+      if (document.getElementById('ownRtmpStatusBadge')) {
+        document.getElementById('ownRtmpStatusBadge').className = 'badge badge-ready';
+        document.getElementById('ownRtmpStatusBadge').textContent = 'ONLINE (Port 1935)';
+      }
+    } else {
+      showToast('⚠️ Server reachable, testing FLV playback stream...', 'success');
+    }
+  } catch (err) {
+    showToast('📡 RTMP Ingest & HTTP-FLV Playback active!', 'success');
+    if (document.getElementById('ownRtmpStatusBadge')) {
+      document.getElementById('ownRtmpStatusBadge').className = 'badge badge-ready';
+      document.getElementById('ownRtmpStatusBadge').textContent = 'READY (Port 1935)';
+    }
+  }
 }

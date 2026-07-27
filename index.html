@@ -227,6 +227,76 @@
           </div>
         </section>
 
+        <!-- Control Card 1.5: Own Dedicated RTMP Server Controller -->
+        <section class="card admin-card">
+          <div class="card-header">
+            <div class="title-with-badge">
+              <span class="card-title">🖥️ Own Dedicated RTMP Server Engine (Stream Anywhere)</span>
+              <span id="ownRtmpStatusBadge" class="badge badge-ready">READY (Port 1935)</span>
+            </div>
+            <button class="btn-sm btn-action" onclick="testOwnRtmpHealth()">🔍 Test Server Health</button>
+          </div>
+
+          <div class="admin-form-grid">
+            <div class="input-group">
+              <label class="input-label">Server Host / IP / Domain</label>
+              <input type="text" id="ownRtmpHost" class="text-input" value="localhost" placeholder="e.g. localhost or rtmp.my-domain.com" onchange="saveOwnRtmpConfig()" />
+            </div>
+
+            <div class="input-group">
+              <label class="input-label">RTMP Ingest Port</label>
+              <input type="number" id="ownRtmpPort" class="text-input" value="1935" placeholder="1935" onchange="saveOwnRtmpConfig()" />
+            </div>
+
+            <div class="input-group">
+              <label class="input-label">HTTP-FLV / HLS Port</label>
+              <input type="number" id="ownHttpPort" class="text-input" value="8000" placeholder="8000" onchange="saveOwnRtmpConfig()" />
+            </div>
+
+            <div class="input-group">
+              <label class="input-label">Stream App Name & Stream Key</label>
+              <div style="display:flex;gap:8px;">
+                <input type="text" id="ownRtmpApp" class="text-input" value="live" placeholder="live" style="width:40%;" onchange="saveOwnRtmpConfig()" />
+                <input type="text" id="ownRtmpKey" class="text-input" value="stream_key_live_01" placeholder="stream_key" style="width:60%;" onchange="saveOwnRtmpConfig()" />
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label class="input-label">Stream Playback Protocol</label>
+              <select id="ownRtmpProtocol" class="select-input" onchange="saveOwnRtmpConfig()">
+                <option value="flv">HTTP-FLV (Sub-Second Low Latency &lt; 1s)</option>
+                <option value="hls">HLS (.m3u8)</option>
+              </select>
+            </div>
+
+            <!-- Computed OBS Ingest URL -->
+            <div class="input-group full-width auto-url-box">
+              <div class="auto-url-header">
+                <label class="input-label">📡 OBS / Streamlabs RTMP Ingest URL (Push Stream Here)</label>
+              </div>
+              <div class="auto-url-row">
+                <input type="text" id="ownRtmpIngestInput" class="text-input readonly-input" readonly value="rtmp://localhost:1935/live/stream_key_live_01" />
+                <button class="btn-primary-sm" onclick="copyAutoShareUrl('ownRtmpIngestInput')">📋 Copy RTMP URL</button>
+              </div>
+            </div>
+
+            <!-- Computed Playback URL -->
+            <div class="input-group full-width auto-url-box" style="margin-top:8px;">
+              <div class="auto-url-header">
+                <label class="input-label">📺 HTTP-FLV Direct Zero-Lag Playback URL</label>
+              </div>
+              <div class="auto-url-row">
+                <input type="text" id="ownFlvPlaybackInput" class="text-input readonly-input" readonly value="http://localhost:8000/live/stream_key_live_01.flv" />
+                <button class="btn-primary-sm" onclick="copyAutoShareUrl('ownFlvPlaybackInput')">📋 Copy Playback URL</button>
+              </div>
+            </div>
+
+            <div class="form-actions full-width" style="margin-top:12px;">
+              <button class="btn-primary" onclick="applyOwnRtmpToActiveChannel()">⚡ Apply Own RTMP Server to Player (Zero Lag)</button>
+            </div>
+          </div>
+        </section>
+
         <!-- Control Card 2: RTMP Multi-Destination Restreaming (YouTube, Twitch, Kick, Facebook) -->
         <section class="card admin-card">
           <div class="card-header">
