@@ -122,14 +122,15 @@ async function uploadFile(file) {
 
 async function uploadWebhookInChunks(file, uploadUrl) {
   const total = file.size;
-  const CHUNK_BYTES = 4 * 1024 * 1024; // 4 MB slices
+  const CHUNK_BYTES = 5 * 1024 * 1024; // 5 MB slices
   let offset = 0;
   let chunkIndex = 0;
   const totalChunks = Math.ceil(total / CHUNK_BYTES);
-  let fileId = 'f_' + Date.now();
+  let fileId = null;
   let startTime = Date.now();
   let lastOffset = 0;
   let lastTime = startTime;
+  let resultData = {};
 
   while (offset < total) {
     if (cancelFlag) throw new Error('Cancelled');
@@ -147,13 +148,19 @@ async function uploadWebhookInChunks(file, uploadUrl) {
       fileId: fileId
     };
 
-    // Use mode: 'no-cors' + text/plain so Chrome skips preflight and handles GAS 302 redirect cleanly without 'Failed to fetch'
-    await fetch(uploadUrl, {
+    const resp = await fetch(uploadUrl, {
       method: 'POST',
-      mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(payload)
     });
+
+    try {
+      const json = await resp.json();
+      if (json && json.fileId) {
+        fileId = json.fileId;
+        resultData = json;
+      }
+    } catch (e) {}
 
     offset = end;
     chunkIndex++;
@@ -170,7 +177,7 @@ async function uploadWebhookInChunks(file, uploadUrl) {
     lastTime = now;
   }
 
-  return { fileId, fileName: file.name };
+  return resultData.fileId ? resultData : { fileId: fileId || ('f_' + Date.now()), fileName: file.name };
 }
 
 function readSliceAsBase64(blob) {
