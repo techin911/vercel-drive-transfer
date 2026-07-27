@@ -103,6 +103,18 @@
             <span class="stat-value text-cyan">Vercel Cloud</span>
           </div>
         </div>
+
+        <!-- Auto Share Stream URL Bar -->
+        <div class="auto-url-card">
+          <div class="auto-url-label">
+            <span>🔗 Auto Share Stream URL (Instant Direct Play)</span>
+            <span class="badge badge-ready">Auto URL</span>
+          </div>
+          <div class="auto-url-row">
+            <input type="text" id="autoUrlViewerInput" class="text-input readonly-input" readonly value="https://vercel-drive-transfer.vercel.app/?autostart=true" />
+            <button class="btn-primary-sm" onclick="copyAutoShareUrl('autoUrlViewerInput')">📋 Copy Auto URL</button>
+          </div>
+        </div>
       </section>
 
       <!-- Right Column: User Sidebar -->
@@ -199,6 +211,18 @@
 
             <div class="form-actions full-width">
               <button class="btn-primary" onclick="saveAdminChannelConfig()">💾 Save & Publish Stream Settings</button>
+            </div>
+
+            <!-- Instant Auto Stream URL Generator Box -->
+            <div class="input-group full-width auto-url-box">
+              <div class="auto-url-header">
+                <label class="input-label">⚡ Instant Auto Stream Share Link (Direct Auto-Play)</label>
+                <span class="auto-url-hint">Auto-loads stream, format, and channel instantly when opened!</span>
+              </div>
+              <div class="auto-url-row">
+                <input type="text" id="autoUrlAdminInput" class="text-input readonly-input" readonly value="https://vercel-drive-transfer.vercel.app/?autostart=true" />
+                <button class="btn-primary-sm" onclick="copyAutoShareUrl('autoUrlAdminInput')">📋 Copy Auto URL</button>
+              </div>
             </div>
           </div>
         </section>

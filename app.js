@@ -44,15 +44,105 @@ const defaultKeys = [
 // ─── Init ─────────────────────────────────────────────────────────────────────
 window.onload = () => {
   initStorage();
+  parseAutoUrlParams();
   updateLiveBadge();
   loadChannel(activeChannel);
   renderKeysTable();
   loadRestreamSettingsUI();
+  updateAutoUrlPreview();
 
   if (localStorage.getItem(ADMIN_KEY) === 'true') {
     showAdminDashboard(true);
   }
 };
+
+// ─── Auto URL Query Parameter Engine ─────────────────────────────────────────
+function parseAutoUrlParams() {
+  const params = new URLSearchParams(window.location.search);
+
+  // Auto Unlock Admin via ?pass=admin123 or ?admin=admin123
+  const pass = params.get('pass') || params.get('admin');
+  if (pass === 'admin123' || pass === 'admin') {
+    localStorage.setItem(ADMIN_KEY, 'true');
+  }
+
+  // Auto Switch Tab via ?tab=admin or ?tab=user
+  const tab = params.get('tab');
+  if (tab === 'admin' || tab === 'user') {
+    switchTab(tab);
+  }
+
+  // Auto Select Channel via ?channel=ch1
+  const chParam = params.get('channel') || params.get('ch');
+  if (chParam && ['ch1', 'ch2', 'ch3'].includes(chParam)) {
+    activeChannel = chParam;
+    const sel = document.getElementById('channelSelect');
+    if (sel) sel.value = chParam;
+  }
+
+  // Auto Live Stream Source URL via ?src=... or ?url=... or ?stream=...
+  const src = params.get('src') || params.get('url') || params.get('stream');
+  let format = params.get('format') || params.get('type');
+
+  if (src) {
+    if (!format) {
+      if (src.includes('.m3u8')) format = 'hls';
+      else if (src.includes('.flv')) format = 'flv';
+      else if (src.includes('embed') || src.includes('youtube') || src.includes('twitch')) format = 'iframe';
+      else format = 'hls';
+    }
+
+    const cfg = getStoreConfig();
+    cfg.isLive = true;
+    cfg.channels[activeChannel] = {
+      name: getChannelName(activeChannel),
+      format: format,
+      url: src
+    };
+
+    if (params.has('announce')) {
+      cfg.announcement = params.get('announce');
+    }
+
+    saveStoreConfig(cfg);
+    showToast(`⚡ Auto URL stream loaded on ${getChannelName(activeChannel)}!`, 'success');
+  }
+
+  if (params.get('autostart') === 'true' || params.get('live') === 'true') {
+    const cfg = getStoreConfig();
+    cfg.isLive = true;
+    saveStoreConfig(cfg);
+  }
+}
+
+// Generate shareable Auto URL
+function generateAutoShareUrl(chKey) {
+  const targetCh = chKey || activeChannel;
+  const cfg = getStoreConfig();
+  const ch = cfg.channels[targetCh] || {};
+  const origin = window.location.origin + window.location.pathname;
+  if (!ch.url) return origin;
+  return `${origin}?src=${encodeURIComponent(ch.url)}&format=${ch.format || 'hls'}&channel=${targetCh}&autostart=true`;
+}
+
+function updateAutoUrlPreview() {
+  const chKey = document.getElementById('adminChannelSelect') ? document.getElementById('adminChannelSelect').value : activeChannel;
+  const autoUrl = generateAutoShareUrl(chKey);
+  const inputViewer = document.getElementById('autoUrlViewerInput');
+  const inputAdmin = document.getElementById('autoUrlAdminInput');
+  if (inputViewer) inputViewer.value = autoUrl;
+  if (inputAdmin) inputAdmin.value = autoUrl;
+}
+
+function copyAutoShareUrl(inputTargetId) {
+  const input = document.getElementById(inputTargetId);
+  const url = input ? input.value : generateAutoShareUrl();
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('📋 Auto URL copied to clipboard!', 'success');
+  }).catch(() => {
+    showToast('📋 Auto URL: ' + url, 'success');
+  });
+}
 
 function getStoreConfig() {
   try { return JSON.parse(localStorage.getItem(CONFIG_KEY)) || defaultConfig; }
@@ -228,6 +318,7 @@ function loadAdminChannelConfig(chKey) {
   document.getElementById('adminSourceFormat').value = ch.format || 'hls';
   document.getElementById('adminStreamUrl').value = ch.url || '';
   document.getElementById('adminAnnounceInput').value = cfg.announcement || '';
+  updateAutoUrlPreview();
 }
 
 function saveAdminChannelConfig() {
@@ -251,6 +342,7 @@ function saveAdminChannelConfig() {
 
   saveStoreConfig(cfg);
   loadChannel(activeChannel);
+  updateAutoUrlPreview();
   showToast(`✅ Saved ${getChannelName(chKey)} settings!`, 'success');
 }
 
@@ -303,6 +395,7 @@ function changeChannel(chKey) {
   activeChannel = chKey;
   document.getElementById('statChannel').textContent = getChannelName(chKey);
   loadChannel(chKey);
+  updateAutoUrlPreview();
 }
 
 function loadChannel(chKey) {
