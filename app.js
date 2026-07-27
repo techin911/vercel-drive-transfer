@@ -88,10 +88,10 @@ async function fetchUserProfile() {
 }
 
 function maskEmail(email) {
-  if (!email || !email.includes('@')) return email || '';
+  if (!email || !email.includes('@')) return '******';
   const [name, domain] = email.split('@');
-  if (name.length <= 4) return name[0] + '***@' + domain;
-  return name.substring(0, 3) + '***' + name.substring(name.length - 2) + '@' + domain;
+  const maskedName = name[0] + '*'.repeat(Math.max(5, name.length - 1));
+  return maskedName + '@' + domain;
 }
 
 function updateUserHeader() {
@@ -99,9 +99,8 @@ function updateUserHeader() {
   if (!btn) return;
   
   const rawEmail = userProfile?.email || '';
-  const maskedEmail = rawEmail ? maskEmail(rawEmail) : '';
-  const displayName = userProfile?.name || maskedEmail || 'Connected User';
-  const label = maskedEmail ? `${displayName} (${maskedEmail})` : displayName;
+  const maskedEmail = rawEmail ? maskEmail(rawEmail) : 'Account Connected';
+  const label = `✓ Connected (${maskedEmail})`;
 
   const avatar = userProfile?.picture 
     ? `<img src="${userProfile.picture}" style="width:20px;height:20px;border-radius:50%;margin-right:6px;vertical-align:middle;" />`
