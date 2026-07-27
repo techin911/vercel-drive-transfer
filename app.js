@@ -56,7 +56,7 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Direct Pixeldrain High-Speed Upload (No Size or Timeout Limits) ─────────
+// ─── Official Pixeldrain Direct POST Upload (Unlimited Size & Speed) ─────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
@@ -64,11 +64,15 @@ async function uploadFile(file) {
 
   try {
     const apiKey = '969ca829-a330-44af-a95a-473ae11cd1cb';
-    const uploadUrl = `https://pixeldrain.com/api/file/${encodeURIComponent(file.name)}?auth=${apiKey}`;
+    const uploadUrl = 'https://pixeldrain.com/api/file';
 
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       currentXHR = xhr;
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('name', file.name);
 
       let startTime = Date.now();
       let lastUploaded = 0;
@@ -93,7 +97,7 @@ async function uploadFile(file) {
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try { resolve(JSON.parse(xhr.responseText)); }
-          catch (err) { reject(new Error('Invalid response from server')); }
+          catch (err) { reject(new Error('Invalid JSON response')); }
         } else {
           try {
             const errJson = JSON.parse(xhr.responseText);
@@ -104,11 +108,12 @@ async function uploadFile(file) {
         }
       };
 
-      xhr.onerror = () => reject(new Error('Network connection interrupted'));
+      xhr.onerror = () => reject(new Error('Network error during upload'));
       xhr.onabort = () => reject(new Error('Upload cancelled'));
 
-      xhr.open('PUT', uploadUrl, true);
-      xhr.send(file);
+      xhr.open('POST', uploadUrl, true);
+      xhr.setRequestHeader('Authorization', 'Basic ' + btoa(':' + apiKey));
+      xhr.send(formData);
     });
 
     if (!result.success || !result.id) {
