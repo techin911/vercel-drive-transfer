@@ -1,605 +1,312 @@
-// VercelStream Studio — 100% Serverless Multi-Destination Broadcast & Player Engine
-// Admin Passcode: admin123
+// PixelTransfer — Powered by Pixeldrain API
+// Account: techin911
+// Features: Direct fast upload, live progress/speed/ETA, download & view links, individual file delete API
 
-const CONFIG_KEY   = 'vercelstream_channels_config';
-const KEYS_KEY     = 'vercelstream_access_keys';
-const RESTREAM_KEY = 'vercelstream_restream_config';
-const ADMIN_KEY    = 'vercelstream_admin_unlocked';
-const OWN_RTMP_KEY = 'vercelstream_own_rtmp_config';
+function getAuthHeader() {
+  // Encrypted/obfuscated Pixeldrain API Key: 969ca829-a330-44af-a95a-473ae11cd1cb
+  const token = 'Ojk2OWNhODI5LWEzMzAtNDRhZi1hOTVhLTQ3M2FlMTFjZDFjYg==';
+  return 'Basic ' + token;
+}
 
-let currentTab = 'user';
-let activeChannel = 'ch1';
-let hlsPlayer = null;
-let flvPlayer = null;
-let mediaStream = null;
+const FILES_KEY = 'pixeltransfer_files';
 
-const defaultOwnRtmp = {
-  host: 'localhost',
-  rtmpPort: 1935,
-  httpPort: 8000,
-  app: 'live',
-  key: 'stream_key_live_01',
-  protocol: 'flv'
-};
+let uploadQueue = [];
+let isUploading = false;
+let cancelFlag  = false;
+let currentXHR  = null;
 
-// Default Broadcast Configurations
-const defaultConfig = {
-  isLive: true,
-  announcement: '🔴 Live Stream Event is now broadcasting on Channel 1!',
-  channels: {
-    ch1: {
-      name: 'Channel 1 (Primary)',
-      format: 'hls',
-      url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
-    },
-    ch2: {
-      name: 'Channel 2 (Backup)',
-      format: 'hls',
-      url: 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8'
-    },
-    ch3: {
-      name: 'Channel 3 (Event Special)',
-      format: 'iframe',
-      url: 'https://www.youtube.com/embed/live_stream?channel=UC4R8DWoMoI7CAwX8_LjQHig'
-    }
-  }
-};
-
-const defaultKeys = [
-  { key: 'key_primary_live', channel: 'ch1', status: 'Active' },
-  { key: 'key_backup_live', channel: 'ch2', status: 'Active' },
-  { key: 'key_event_03', channel: 'ch3', status: 'Active' }
-];
-
-// ─── Init ─────────────────────────────────────────────────────────────────────
 window.onload = () => {
-  initStorage();
-  parseAutoUrlParams();
-  updateLiveBadge();
-  loadChannel(activeChannel);
-  renderKeysTable();
-  loadRestreamSettingsUI();
-  updateOwnRtmpUI();
-  updateAutoUrlPreview();
-
-  if (localStorage.getItem(ADMIN_KEY) === 'true') {
-    showAdminDashboard(true);
-  }
+  renderFilesList();
+  setupDropzone();
+  syncRemoteFiles();
 };
 
-// ─── Auto URL Query Parameter Engine ─────────────────────────────────────────
-function parseAutoUrlParams() {
-  const params = new URLSearchParams(window.location.search);
-
-  // Auto Unlock Admin via ?pass=admin123 or ?admin=admin123
-  const pass = params.get('pass') || params.get('admin');
-  if (pass === 'admin123' || pass === 'admin') {
-    localStorage.setItem(ADMIN_KEY, 'true');
-  }
-
-  // Auto Switch Tab via ?tab=admin or ?tab=user
-  const tab = params.get('tab');
-  if (tab === 'admin' || tab === 'user') {
-    switchTab(tab);
-  }
-
-  // Auto Select Channel via ?channel=ch1
-  const chParam = params.get('channel') || params.get('ch');
-  if (chParam && ['ch1', 'ch2', 'ch3'].includes(chParam)) {
-    activeChannel = chParam;
-    const sel = document.getElementById('channelSelect');
-    if (sel) sel.value = chParam;
-  }
-
-  // Auto Live Stream Source URL via ?src=... or ?url=... or ?stream=...
-  const src = params.get('src') || params.get('url') || params.get('stream');
-  let format = params.get('format') || params.get('type');
-
-  if (src) {
-    if (!format) {
-      if (src.includes('.m3u8')) format = 'hls';
-      else if (src.includes('.flv')) format = 'flv';
-      else if (src.includes('embed') || src.includes('youtube') || src.includes('twitch')) format = 'iframe';
-      else format = 'hls';
-    }
-
-    const cfg = getStoreConfig();
-    cfg.isLive = true;
-    cfg.channels[activeChannel] = {
-      name: getChannelName(activeChannel),
-      format: format,
-      url: src
-    };
-
-    if (params.has('announce')) {
-      cfg.announcement = params.get('announce');
-    }
-
-    saveStoreConfig(cfg);
-    showToast(`⚡ Auto URL stream loaded on ${getChannelName(activeChannel)}!`, 'success');
-  }
-
-  if (params.get('autostart') === 'true' || params.get('live') === 'true') {
-    const cfg = getStoreConfig();
-    cfg.isLive = true;
-    saveStoreConfig(cfg);
-  }
-}
-
-// Generate shareable Auto URL
-function generateAutoShareUrl(chKey) {
-  const targetCh = chKey || activeChannel;
-  const cfg = getStoreConfig();
-  const ch = cfg.channels[targetCh] || {};
-  const origin = window.location.origin + window.location.pathname;
-  if (!ch.url) return origin;
-  return `${origin}?src=${encodeURIComponent(ch.url)}&format=${ch.format || 'hls'}&channel=${targetCh}&autostart=true`;
-}
-
-function updateAutoUrlPreview() {
-  const chKey = document.getElementById('adminChannelSelect') ? document.getElementById('adminChannelSelect').value : activeChannel;
-  const autoUrl = generateAutoShareUrl(chKey);
-  const inputViewer = document.getElementById('autoUrlViewerInput');
-  const inputAdmin = document.getElementById('autoUrlAdminInput');
-  if (inputViewer) inputViewer.value = autoUrl;
-  if (inputAdmin) inputAdmin.value = autoUrl;
-}
-
-function copyAutoShareUrl(inputTargetId) {
-  const input = document.getElementById(inputTargetId);
-  const url = input ? input.value : generateAutoShareUrl();
-  navigator.clipboard.writeText(url).then(() => {
-    showToast('📋 Auto URL copied to clipboard!', 'success');
-  }).catch(() => {
-    showToast('📋 Auto URL: ' + url, 'success');
+// ─── Dropzone ─────────────────────────────────────────────────────────────────
+function setupDropzone() {
+  const dz = document.getElementById('dropzone');
+  ['dragenter','dragover'].forEach(e =>
+    dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('drag-over'); })
+  );
+  ['dragleave','drop'].forEach(e =>
+    dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.remove('drag-over'); })
+  );
+  dz.addEventListener('drop', ev => {
+    ev.preventDefault();
+    if (ev.dataTransfer.files.length) queueFiles(ev.dataTransfer.files);
   });
 }
 
-function getStoreConfig() {
-  try { return JSON.parse(localStorage.getItem(CONFIG_KEY)) || defaultConfig; }
-  catch { return defaultConfig; }
+function handleFileSelect(event) {
+  if (event.target.files.length) queueFiles(event.target.files);
+  event.target.value = '';
 }
 
-function saveStoreConfig(cfg) {
-  localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
-  updateLiveBadge();
+// ─── Queue ────────────────────────────────────────────────────────────────────
+function queueFiles(files) {
+  for (const f of files) uploadQueue.push(f);
+  if (!isUploading) processQueue();
 }
 
-function initStorage() {
-  if (!localStorage.getItem(CONFIG_KEY)) saveStoreConfig(defaultConfig);
-  if (!localStorage.getItem(KEYS_KEY)) localStorage.setItem(KEYS_KEY, JSON.stringify(defaultKeys));
+async function processQueue() {
+  if (!uploadQueue.length) { isUploading = false; return; }
+  isUploading = true;
+  cancelFlag = false;
+  const file = uploadQueue.shift();
+  await uploadFile(file);
+  if (!cancelFlag) processQueue();
+  else isUploading = false;
 }
 
-// ─── Tab Switching ────────────────────────────────────────────────────────────
-function switchTab(tab) {
-  currentTab = tab;
-  document.getElementById('tabUserBtn').classList.toggle('active', tab === 'user');
-  document.getElementById('tabAdminBtn').classList.toggle('active', tab === 'admin');
+// ─── Pixeldrain Upload ────────────────────────────────────────────────────────
+async function uploadFile(file) {
+  setBadge('uploading', '⏫ Uploading...');
+  showProgress(file.name, file.size);
+  hideResult();
 
-  document.getElementById('userDashboard').classList.toggle('hidden', tab !== 'user');
-  document.getElementById('adminPanel').classList.toggle('hidden', tab !== 'admin');
-
-  if (tab === 'user') {
-    loadChannel(activeChannel);
-  } else if (tab === 'admin') {
-    const isUnlocked = localStorage.getItem(ADMIN_KEY) === 'true';
-    showAdminDashboard(isUnlocked);
-  }
-}
-
-// ─── Admin Security ───────────────────────────────────────────────────────────
-function unlockAdmin() {
-  const pass = document.getElementById('adminPassInput').value.trim();
-  if (pass === 'admin123' || pass === 'admin') {
-    localStorage.setItem(ADMIN_KEY, 'true');
-    showAdminDashboard(true);
-    showToast('🔓 Admin Panel Unlocked!', 'success');
-  } else {
-    showToast('❌ Incorrect Passcode', 'error');
-  }
-}
-
-function showAdminDashboard(show) {
-  document.getElementById('adminLockScreen').classList.toggle('hidden', show);
-  document.getElementById('adminMainContent').classList.toggle('hidden', !show);
-  if (show) {
-    loadAdminChannelConfig('ch1');
-    renderKeysTable();
-    loadRestreamSettingsUI();
-  }
-}
-
-// ─── Direct Zero-OBS Web Studio Broadcaster (100% Vercel Browser Engine) ──────
-let isMicMuted = false;
-let currentCamId = null;
-let currentMicId = null;
-let studioBroadcastChannel = new BroadcastChannel('vercelstream_zero_obs_channel');
-
-studioBroadcastChannel.onmessage = (e) => {
-  if (e.data && e.data.type === 'LIVE_STATE_CHANGE') {
-    updateLiveBadge();
-    loadChannel(activeChannel);
-  }
-};
-
-async function populateMediaDevices() {
   try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const camSelect = document.getElementById('studioCamSelect');
-    const micSelect = document.getElementById('studioMicSelect');
+    const uploadUrl = 'https://pixeldrain.com/api/file';
 
-    if (camSelect) {
-      camSelect.innerHTML = '<option value="">Default Camera</option>';
-      devices.filter(d => d.kind === 'videoinput').forEach((d, idx) => {
-        camSelect.innerHTML += `<option value="${d.deviceId}">${d.label || 'Camera ' + (idx + 1)}</option>`;
-      });
+    const result = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      currentXHR = xhr;
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('name', file.name);
+
+      let startTime = Date.now();
+      let lastUploaded = 0;
+
+      xhr.upload.onprogress = (e) => {
+        if (cancelFlag) { xhr.abort(); return; }
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          const now = Date.now();
+          const elapsed = (now - startTime) / 1000;
+          const bytesDone = e.loaded - lastUploaded;
+          const speedBps = elapsed > 0 ? bytesDone / elapsed : 0;
+          const remaining = e.total - e.loaded;
+          const etaSec = speedBps > 0 ? remaining / speedBps : 0;
+
+          setProgress(file.name, pct, e.loaded, e.total, speedBps, etaSec);
+          startTime = now;
+          lastUploaded = e.loaded;
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText)); }
+          catch (err) { reject(new Error('Invalid JSON from Pixeldrain')); }
+        } else {
+          try {
+            const errJson = JSON.parse(xhr.responseText);
+            reject(new Error(errJson.message || `HTTP ${xhr.status}`));
+          } catch {
+            reject(new Error(`Server error HTTP ${xhr.status}`));
+          }
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.onabort = () => reject(new Error('Upload cancelled'));
+
+      xhr.open('POST', uploadUrl, true);
+      xhr.setRequestHeader('Authorization', getAuthHeader());
+      xhr.send(formData);
+    });
+
+    if (!result.success || !result.id) {
+      throw new Error(result.message || 'Pixeldrain upload failed');
     }
 
-    if (micSelect) {
-      micSelect.innerHTML = '<option value="">Default Microphone</option>';
-      devices.filter(d => d.kind === 'audioinput').forEach((d, idx) => {
-        micSelect.innerHTML += `<option value="${d.deviceId}">${d.label || 'Microphone ' + (idx + 1)}</option>`;
-      });
-    }
-  } catch (e) { console.log('Device enumeration:', e); }
-}
+    const fileId = result.id;
+    const viewUrl = `https://pixeldrain.com/u/${fileId}`;
+    const downloadUrl = `https://pixeldrain.com/api/file/${fileId}?download`;
 
-async function startCameraStream() {
-  try {
-    stopLocalStream();
-    const camId = document.getElementById('studioCamSelect') ? document.getElementById('studioCamSelect').value : null;
-    const micId = document.getElementById('studioMicSelect') ? document.getElementById('studioMicSelect').value : null;
-    const quality = document.getElementById('studioQualitySelect') ? document.getElementById('studioQualitySelect').value : '720p';
+    setBadge('success', '✅ Completed');
 
-    let videoConstraint = true;
-    if (quality === '1080p') videoConstraint = { width: 1920, height: 1080, frameRate: 60 };
-    else if (quality === '720p') videoConstraint = { width: 1280, height: 720, frameRate: 30 };
-    else if (quality === '480p') videoConstraint = { width: 854, height: 480, frameRate: 30 };
+    saveFileRecord({
+      id: fileId,
+      name: file.name,
+      url: viewUrl,
+      downloadUrl: downloadUrl,
+      size: file.size,
+      date: new Date().toISOString()
+    });
 
-    if (camId) videoConstraint = { ...videoConstraint, deviceId: { exact: camId } };
-    const audioConstraint = micId ? { deviceId: { exact: micId } } : true;
+    showResult(
+      `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded to Pixeldrain! ` +
+      `<a href="${viewUrl}" target="_blank" class="link">View File →</a> &nbsp;|&nbsp; ` +
+      `<a href="${downloadUrl}" target="_blank" class="link">Direct Download ⬇️</a>`,
+      'success'
+    );
 
-    mediaStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint, audio: audioConstraint });
-    attachLocalStream();
-    populateMediaDevices();
-    showToast('🎥 Zero-OBS Web Camera Live! Broadcasting directly from browser.', 'success');
   } catch (err) {
-    showToast('❌ Camera access error: ' + err.message, 'error');
-  }
-}
-
-async function startScreenShare() {
-  try {
-    stopLocalStream();
-    mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' }, audio: true });
-    attachLocalStream();
-    showToast('🖥️ Screen Share Live! Broadcasting browser/screen without OBS.', 'success');
-  } catch (err) {
-    showToast('❌ Screen share cancelled', 'error');
-  }
-}
-
-function toggleMicrophoneMute() {
-  if (!mediaStream) return;
-  const audioTracks = mediaStream.getAudioTracks();
-  if (audioTracks.length === 0) {
-    showToast('⚠️ No audio track found', 'error');
-    return;
-  }
-  isMicMuted = !isMicMuted;
-  audioTracks.forEach(track => track.enabled = !isMicMuted);
-  const btn = document.getElementById('btnMuteMic');
-  if (btn) {
-    btn.textContent = isMicMuted ? '🔇 Unmute Mic' : '🎙️ Mute Mic';
-    btn.className = isMicMuted ? 'btn-sm btn-danger-sm' : 'btn-sm btn-action';
-  }
-  showToast(isMicMuted ? '🔇 Microphone Muted' : '🎙️ Microphone Unmuted', isMicMuted ? 'error' : 'success');
-}
-
-function attachLocalStream() {
-  const preview = document.getElementById('webcamPreview');
-  const video = document.getElementById('videoPlayer');
-  if (preview) {
-    preview.srcObject = mediaStream;
-    preview.classList.remove('hidden');
-  }
-
-  if (video) {
-    video.srcObject = mediaStream;
-    video.classList.remove('hidden');
-    const iframe = document.getElementById('iframePlayer');
-    const overlay = document.getElementById('playerOverlay');
-    if (iframe) iframe.classList.add('hidden');
-    if (overlay) overlay.classList.add('hidden');
-    document.getElementById('statProto').textContent = 'BROWSER WEBRTC (ZERO OBS)';
-  }
-
-  setBroadcastStatus(true);
-  studioBroadcastChannel.postMessage({ type: 'LIVE_STATE_CHANGE', isLive: true });
-}
-
-function stopLocalStream() {
-  if (mediaStream) {
-    mediaStream.getTracks().forEach(track => track.stop());
-    mediaStream = null;
-  }
-  const preview = document.getElementById('webcamPreview');
-  if (preview) {
-    preview.srcObject = null;
-    preview.classList.add('hidden');
-  }
-  loadChannel(activeChannel);
-  showToast('⏹ Zero-OBS Local Stream Stopped.', 'success');
-}
-
-// ─── Multi-Destination Restreaming ────────────────────────────────────────────
-function loadRestreamSettingsUI() {
-  try {
-    const rs = JSON.parse(localStorage.getItem(RESTREAM_KEY)) || {};
-    if (rs.yt) {
-      document.getElementById('restreamYoutubeToggle').checked = rs.yt.enabled || false;
-      document.getElementById('restreamYoutubeUrl').value = rs.yt.url || 'rtmp://a.rtmp.youtube.com/live2';
-      document.getElementById('restreamYoutubeKey').value = rs.yt.key || '';
-    }
-    if (rs.tw) {
-      document.getElementById('restreamTwitchToggle').checked = rs.tw.enabled || false;
-      document.getElementById('restreamTwitchUrl').value = rs.tw.url || 'rtmp://live.twitch.tv/app';
-      document.getElementById('restreamTwitchKey').value = rs.tw.key || '';
-    }
-    if (rs.fb) {
-      document.getElementById('restreamFbToggle').checked = rs.fb.enabled || false;
-      document.getElementById('restreamFbUrl').value = rs.fb.url || 'rtmps://live-api-s.facebook.com:443/rtmp/';
-      document.getElementById('restreamFbKey').value = rs.fb.key || '';
-    }
-    if (rs.custom) {
-      document.getElementById('restreamCustomToggle').checked = rs.custom.enabled || false;
-      document.getElementById('restreamCustomUrl').value = rs.custom.url || '';
-      document.getElementById('restreamCustomKey').value = rs.custom.key || '';
-    }
-  } catch {}
-}
-
-function saveRestreamSettings() {
-  const rs = {
-    yt: {
-      enabled: document.getElementById('restreamYoutubeToggle').checked,
-      url: document.getElementById('restreamYoutubeUrl').value.trim(),
-      key: document.getElementById('restreamYoutubeKey').value.trim()
-    },
-    tw: {
-      enabled: document.getElementById('restreamTwitchToggle').checked,
-      url: document.getElementById('restreamTwitchUrl').value.trim(),
-      key: document.getElementById('restreamTwitchKey').value.trim()
-    },
-    fb: {
-      enabled: document.getElementById('restreamFbToggle').checked,
-      url: document.getElementById('restreamFbUrl').value.trim(),
-      key: document.getElementById('restreamFbKey').value.trim()
-    },
-    custom: {
-      enabled: document.getElementById('restreamCustomToggle').checked,
-      url: document.getElementById('restreamCustomUrl').value.trim(),
-      key: document.getElementById('restreamCustomKey').value.trim()
-    }
-  };
-  localStorage.setItem(RESTREAM_KEY, JSON.stringify(rs));
-  showToast('🌐 Restream targets saved & active!', 'success');
-}
-
-// ─── Admin Controller Actions ─────────────────────────────────────────────────
-function setBroadcastStatus(isLive) {
-  const cfg = getStoreConfig();
-  cfg.isLive = isLive;
-  saveStoreConfig(cfg);
-  updateLiveBadge();
-  if (!mediaStream) loadChannel(activeChannel);
-  showToast(isLive ? '🔴 LIVE BROADCAST STARTED!' : '⏹ Broadcast Ended', isLive ? 'success' : 'error');
-}
-
-function loadAdminChannelConfig(chKey) {
-  const cfg = getStoreConfig();
-  const ch = cfg.channels[chKey] || {};
-  document.getElementById('adminSourceFormat').value = ch.format || 'hls';
-  document.getElementById('adminStreamUrl').value = ch.url || '';
-  document.getElementById('adminAnnounceInput').value = cfg.announcement || '';
-  updateAutoUrlPreview();
-}
-
-function saveAdminChannelConfig() {
-  const cfg = getStoreConfig();
-  const chKey = document.getElementById('adminChannelSelect').value;
-  const format = document.getElementById('adminSourceFormat').value;
-  const url = document.getElementById('adminStreamUrl').value.trim();
-  const announce = document.getElementById('adminAnnounceInput').value.trim();
-
-  if (!url) {
-    showToast('⚠️ Paste a valid Stream Source URL first', 'error');
-    return;
-  }
-
-  cfg.channels[chKey] = {
-    name: getChannelName(chKey),
-    format: format,
-    url: url
-  };
-  cfg.announcement = announce;
-
-  saveStoreConfig(cfg);
-  loadChannel(activeChannel);
-  updateAutoUrlPreview();
-  showToast(`✅ Saved ${getChannelName(chKey)} settings!`, 'success');
-}
-
-// ─── Stream Key Management ────────────────────────────────────────────────────
-function getKeys() {
-  try { return JSON.parse(localStorage.getItem(KEYS_KEY)) || defaultKeys; }
-  catch { return defaultKeys; }
-}
-
-function renderKeysTable() {
-  const tbody = document.getElementById('keysTableBody');
-  if (!tbody) return;
-  const keys = getKeys();
-  tbody.innerHTML = keys.map((k, idx) => `
-    <tr>
-      <td><code style="color:var(--cyan);font-family:'JetBrains Mono'">${k.key}</code></td>
-      <td>${getChannelName(k.channel)}</td>
-      <td><span class="badge ${k.status==='Active'?'badge-ready':'badge-offline'}">${k.status}</span></td>
-      <td>
-        <button class="btn-sm btn-action" onclick="deleteKey(${idx})">🗑️ Delete</button>
-      </td>
-    </tr>
-  `).join('');
-}
-
-function generateNewKey() {
-  const name = document.getElementById('newKeyName').value.trim();
-  const ch = document.getElementById('newKeyChannel').value;
-  if (!name) {
-    showToast('⚠️ Type a key name first', 'error');
-    return;
-  }
-  const keys = getKeys();
-  keys.push({ key: name, channel: ch, status: 'Active' });
-  localStorage.setItem(KEYS_KEY, JSON.stringify(keys));
-  document.getElementById('newKeyName').value = '';
-  renderKeysTable();
-  showToast('✅ Stream Key Generated!', 'success');
-}
-
-function deleteKey(idx) {
-  const keys = getKeys();
-  keys.splice(idx, 1);
-  localStorage.setItem(KEYS_KEY, JSON.stringify(keys));
-  renderKeysTable();
-}
-
-// ─── Video Player Engine ──────────────────────────────────────────────────────
-function changeChannel(chKey) {
-  activeChannel = chKey;
-  document.getElementById('statChannel').textContent = getChannelName(chKey);
-  loadChannel(chKey);
-  updateAutoUrlPreview();
-}
-
-function loadChannel(chKey) {
-  if (mediaStream) return; // Keep local stream active if live
-
-  const cfg = getStoreConfig();
-  const ch = cfg.channels[chKey] || {};
-  const video = document.getElementById('videoPlayer');
-  const iframe = document.getElementById('iframePlayer');
-  const overlay = document.getElementById('playerOverlay');
-  const announceBanner = document.getElementById('announcementBanner');
-  const announceText = document.getElementById('announceText');
-
-  if (cfg.announcement) {
-    announceText.textContent = cfg.announcement;
-    announceBanner.classList.remove('hidden');
-  } else {
-    announceBanner.classList.add('hidden');
-  }
-
-  if (!cfg.isLive) {
-    destroyPlayers();
-    video.classList.add('hidden');
-    iframe.classList.add('hidden');
-    overlay.classList.remove('hidden');
-    document.getElementById('statStatus').textContent = 'OFFLINE';
-    document.getElementById('statStatus').className = 'stat-value text-red';
-    return;
-  }
-
-  document.getElementById('statStatus').textContent = '🔴 LIVE';
-  document.getElementById('statStatus').className = 'stat-value text-red';
-
-  destroyPlayers();
-
-  if (ch.format === 'iframe') {
-    video.classList.add('hidden');
-    iframe.src = ch.url;
-    iframe.classList.remove('hidden');
-    overlay.classList.add('hidden');
-    document.getElementById('statProto').textContent = 'EMBED / IFRAME';
-  } else {
-    iframe.classList.add('hidden');
-    iframe.src = '';
-    video.classList.remove('hidden');
-
-    if (ch.format === 'hls' && Hls.isSupported()) {
-      hlsPlayer = new Hls({ maxBufferLength: 2, liveSyncDurationCount: 1 });
-      hlsPlayer.loadSource(ch.url);
-      hlsPlayer.attachMedia(video);
-      hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(()=>{});
-        overlay.classList.add('hidden');
-      });
-      document.getElementById('statProto').textContent = 'HLS (.m3u8)';
-    } else if (ch.format === 'flv' && window.mpegts && mpegts.isSupported()) {
-      flvPlayer = mpegts.createPlayer({ type: 'flv', isLive: true, url: ch.url }, { enableStashBuffer: false });
-      flvPlayer.attachMediaElement(video);
-      flvPlayer.load();
-      flvPlayer.play().catch(()=>{});
-      overlay.classList.add('hidden');
-      document.getElementById('statProto').textContent = 'HTTP-FLV (<1s)';
+    if (cancelFlag) {
+      setBadge('ready', 'Ready');
+      showResult('Upload cancelled.', 'error');
     } else {
-      video.src = ch.url;
-      video.play().then(() => overlay.classList.add('hidden')).catch(() => overlay.classList.remove('hidden'));
-      document.getElementById('statProto').textContent = 'DIRECT MP4';
+      setBadge('error', '❌ Error');
+      showResult('❌ Upload failed: ' + err.message, 'error');
+      console.error(err);
+    }
+  }
+
+  setTimeout(() => setBadge('ready', 'Ready'), 4000);
+}
+
+function cancelUpload() {
+  cancelFlag = true;
+  if (currentXHR) { currentXHR.abort(); currentXHR = null; }
+  uploadQueue = [];
+}
+
+// ─── Delete File from Pixeldrain Account ──────────────────────────────────────
+async function deleteFile(fileId, btn) {
+  if (!confirm('Delete this file permanently from Pixeldrain?')) return;
+  if (btn) {
+    btn.classList.add('deleting');
+    btn.textContent = '...';
+  }
+
+  try {
+    const resp = await fetch(`https://pixeldrain.com/api/file/${fileId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': getAuthHeader() }
+    });
+
+    const resJson = await resp.json().catch(() => ({}));
+
+    if (resp.ok && resJson.success) {
+      removeFileRecord(fileId);
+      showToast('🗑️ File deleted from Pixeldrain!', 'success');
+    } else {
+      throw new Error(resJson.value || resJson.message || `HTTP ${resp.status}`);
+    }
+  } catch (err) {
+    showToast('❌ Delete failed: ' + err.message, 'error');
+    if (btn) {
+      btn.classList.remove('deleting');
+      btn.textContent = '🗑️';
     }
   }
 }
 
-function destroyPlayers() {
-  if (hlsPlayer) { hlsPlayer.destroy(); hlsPlayer = null; }
-  if (flvPlayer) { flvPlayer.destroy(); flvPlayer = null; }
-}
-
-function reloadPlayer() {
-  loadChannel(activeChannel);
-  showToast('🔄 Feed Reloaded', 'success');
-}
-
-function toggleFullscreen() {
-  const video = document.getElementById('videoPlayer');
-  if (video.requestFullscreen) video.requestFullscreen();
-}
-
-function updateLiveBadge() {
-  const cfg = getStoreConfig();
-  const badge = document.getElementById('liveBadge');
-  const text = document.getElementById('liveBadgeText');
-  if (cfg.isLive) {
-    badge.className = 'status-badge status-online';
-    text.textContent = '🔴 LIVE';
-  } else {
-    badge.className = 'status-badge status-offline';
-    text.textContent = 'OFFLINE';
+// ─── Optional Sync User Files from Pixeldrain API ────────────────────────────
+async function syncRemoteFiles() {
+  try {
+    const resp = await fetch('https://pixeldrain.com/api/user/files', {
+      headers: { 'Authorization': getAuthHeader() }
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.success && Array.isArray(data.files)) {
+      const records = data.files.map(f => ({
+        id: f.id,
+        name: f.name || ('file_' + f.id),
+        url: `https://pixeldrain.com/u/${f.id}`,
+        downloadUrl: `https://pixeldrain.com/api/file/${f.id}?download`,
+        size: f.size || 0,
+        date: f.date_upload || new Date().toISOString()
+      }));
+      localStorage.setItem(FILES_KEY, JSON.stringify(records));
+      renderFilesList();
+    }
+  } catch (e) {
+    console.warn('Pixeldrain remote sync skipped');
   }
 }
 
-// ─── Chat ─────────────────────────────────────────────────────────────────────
-function sendChatMessage() {
-  const input = document.getElementById('chatInput');
-  const msg = input.value.trim();
-  if (!msg) return;
-  const chat = document.getElementById('chatMessages');
-  const div = document.createElement('div');
-  div.className = 'chat-msg';
-  div.innerHTML = `<span class="msg-author">Viewer:</span> <span class="msg-content">${escHtml(msg)}</span>`;
-  chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
-  input.value = '';
+// ─── Local File Records ───────────────────────────────────────────────────────
+function getFileRecords() {
+  try { return JSON.parse(localStorage.getItem(FILES_KEY)) || []; }
+  catch { return []; }
 }
 
-function handleChatKey(e) {
-  if (e.key === 'Enter') sendChatMessage();
+function saveFileRecord(record) {
+  const records = getFileRecords();
+  // Avoid duplicates
+  const filtered = records.filter(r => r.id !== record.id);
+  filtered.unshift(record);
+  localStorage.setItem(FILES_KEY, JSON.stringify(filtered.slice(0, 200)));
+  renderFilesList();
 }
 
-function getChannelName(key) {
-  const map = { ch1: 'Channel 1 (Primary)', ch2: 'Channel 2 (Backup)', ch3: 'Channel 3 (Event Special)' };
-  return map[key] || key;
+function removeFileRecord(fileId) {
+  localStorage.setItem(FILES_KEY, JSON.stringify(getFileRecords().filter(r => r.id !== fileId)));
+  renderFilesList();
 }
+
+function clearAllFiles() {
+  if (!confirm('Clear local history? (Files stay on Pixeldrain)')) return;
+  localStorage.removeItem(FILES_KEY);
+  renderFilesList();
+}
+
+// ─── UI Rendering ─────────────────────────────────────────────────────────────
+function renderFilesList() {
+  const list = document.getElementById('filesList');
+  const records = getFileRecords();
+
+  if (!records.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">⚡</div><p>No files uploaded yet.</p><p class="empty-sub">Files uploaded to Pixeldrain will appear here.</p></div>`;
+    return;
+  }
+
+  list.innerHTML = records.map(r => {
+    const icon = getFileEmoji(r.name);
+    const size = formatBytes(r.size);
+    const date = new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return `
+      <div class="file-item" id="fi-${r.id}">
+        <div class="file-icon">${icon}</div>
+        <div class="file-info">
+          <div class="file-name" title="${escHtml(r.name)}">${escHtml(r.name)}</div>
+          <div class="file-meta"><strong>${size}</strong> &bull; ${date}</div>
+        </div>
+        <div class="file-actions">
+          <a href="${r.url}" target="_blank" class="btn-sm btn-view">View</a>
+          <button class="btn-sm btn-delete" onclick="deleteFile('${r.id}', this)" title="Delete from Pixeldrain">🗑️</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function showProgress(name, total) {
+  document.getElementById('progressSection').classList.remove('hidden');
+  document.getElementById('progressFileName').textContent = name;
+  document.getElementById('progressPct').textContent = '0%';
+  document.getElementById('progressFill').style.width = '0%';
+  document.getElementById('progressUploaded').textContent = `0 B / ${formatBytes(total)}`;
+  document.getElementById('progressSpeed').textContent = '— MB/s';
+  document.getElementById('progressEta').textContent = 'ETA: —';
+}
+
+function setProgress(name, pct, uploaded, total, speedBps, etaSec) {
+  document.getElementById('progressPct').textContent = pct + '%';
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressUploaded').textContent = `${formatBytes(uploaded)} / ${formatBytes(total)}`;
+  if (speedBps > 0) {
+    document.getElementById('progressSpeed').textContent = formatBytes(speedBps) + '/s';
+    document.getElementById('progressEta').textContent = `ETA: ${formatTime(etaSec)}`;
+  }
+}
+
+function setBadge(type, text) {
+  const b = document.getElementById('uploadStatusBadge');
+  b.className = 'badge badge-' + type;
+  b.textContent = text;
+}
+
+function showResult(html, type) {
+  const el = document.getElementById('uploadResult');
+  el.className = 'upload-result ' + type;
+  el.innerHTML = html;
+  el.classList.remove('hidden');
+}
+
+function hideResult() { document.getElementById('uploadResult').classList.add('hidden'); }
 
 function showToast(msg, type) {
   const t = document.createElement('div');
@@ -614,98 +321,35 @@ function showToast(msg, type) {
   setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity 0.3s'; setTimeout(()=>t.remove(),300); }, 3000);
 }
 
+function formatBytes(b) {
+  if (!b || b === 0) return '0 B';
+  const units = ['B','KB','MB','GB','TB'];
+  const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 4);
+  return (b / Math.pow(1024, i)).toFixed(i > 1 ? 2 : 0) + ' ' + units[i];
+}
+
+function formatTime(sec) {
+  if (!sec || sec < 1) return '< 1s';
+  if (sec < 60) return Math.round(sec) + 's';
+  if (sec < 3600) return Math.floor(sec/60) + 'm ' + Math.round(sec%60) + 's';
+  return Math.floor(sec/3600) + 'h ' + Math.floor((sec%3600)/60) + 'm';
+}
+
+function getFileEmoji(name) {
+  const ext = (name || '').split('.').pop().toLowerCase();
+  const map = {
+    jpg:'🖼️',jpeg:'🖼️',png:'🖼️',gif:'🖼️',webp:'🖼️',heic:'🖼️',
+    mp4:'🎬',mkv:'🎬',avi:'🎬',mov:'🎬',wmv:'🎬',
+    mp3:'🎵',wav:'🎵',flac:'🎵',m4a:'🎵',aac:'🎵',
+    pdf:'📄',doc:'📝',docx:'📝',xls:'📊',xlsx:'📊',ppt:'📋',pptx:'📋',
+    txt:'📃',csv:'📊',
+    zip:'📦',rar:'📦','7z':'📦',tar:'📦',gz:'📦',
+    js:'💻',ts:'💻',py:'💻',html:'💻',css:'💻',json:'💻',
+    apk:'📱',exe:'⚙️',dmg:'💿',iso:'💿',
+  };
+  return map[ext] || '📁';
+}
+
 function escHtml(str) {
   return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-// ─── Own Dedicated RTMP Server Control Engine ────────────────────────────────
-function getOwnRtmpConfig() {
-  try { return JSON.parse(localStorage.getItem(OWN_RTMP_KEY)) || defaultOwnRtmp; }
-  catch { return defaultOwnRtmp; }
-}
-
-function saveOwnRtmpConfig() {
-  const hostInput = document.getElementById('ownRtmpHost');
-  const rtmpPortInput = document.getElementById('ownRtmpPort');
-  const httpPortInput = document.getElementById('ownHttpPort');
-  const appInput = document.getElementById('ownRtmpApp');
-  const keyInput = document.getElementById('ownRtmpKey');
-  const protoInput = document.getElementById('ownRtmpProtocol');
-
-  const cfg = {
-    host: hostInput ? hostInput.value.trim() : 'localhost',
-    rtmpPort: rtmpPortInput ? parseInt(rtmpPortInput.value, 10) : 1935,
-    httpPort: httpPortInput ? parseInt(httpPortInput.value, 10) : 8000,
-    app: appInput ? appInput.value.trim() : 'live',
-    key: keyInput ? keyInput.value.trim() : 'stream_key_live_01',
-    protocol: protoInput ? protoInput.value : 'flv'
-  };
-
-  localStorage.setItem(OWN_RTMP_KEY, JSON.stringify(cfg));
-  updateOwnRtmpUI();
-  showToast('⚡ Own RTMP Server settings saved!', 'success');
-}
-
-function updateOwnRtmpUI() {
-  const cfg = getOwnRtmpConfig();
-  if (document.getElementById('ownRtmpHost')) document.getElementById('ownRtmpHost').value = cfg.host;
-  if (document.getElementById('ownRtmpPort')) document.getElementById('ownRtmpPort').value = cfg.rtmpPort;
-  if (document.getElementById('ownHttpPort')) document.getElementById('ownHttpPort').value = cfg.httpPort;
-  if (document.getElementById('ownRtmpApp')) document.getElementById('ownRtmpApp').value = cfg.app;
-  if (document.getElementById('ownRtmpKey')) document.getElementById('ownRtmpKey').value = cfg.key;
-  if (document.getElementById('ownRtmpProtocol')) document.getElementById('ownRtmpProtocol').value = cfg.protocol;
-
-  const rtmpIngest = `rtmp://${cfg.host}:${cfg.rtmpPort}/${cfg.app}/${cfg.key}`;
-  const flvPlayback = `http://${cfg.host}:${cfg.httpPort}/${cfg.app}/${cfg.key}.flv`;
-  const hlsPlayback = `http://${cfg.host}:${cfg.httpPort}/${cfg.app}/${cfg.key}/index.m3u8`;
-
-  if (document.getElementById('ownRtmpIngestInput')) document.getElementById('ownRtmpIngestInput').value = rtmpIngest;
-  if (document.getElementById('ownFlvPlaybackInput')) document.getElementById('ownFlvPlaybackInput').value = cfg.protocol === 'flv' ? flvPlayback : hlsPlayback;
-}
-
-function applyOwnRtmpToActiveChannel() {
-  const cfg = getOwnRtmpConfig();
-  const playbackUrl = cfg.protocol === 'flv' 
-    ? `http://${cfg.host}:${cfg.httpPort}/${cfg.app}/${cfg.key}.flv`
-    : `http://${cfg.host}:${cfg.httpPort}/${cfg.app}/${cfg.key}/index.m3u8`;
-
-  const storeCfg = getStoreConfig();
-  const chKey = document.getElementById('adminChannelSelect') ? document.getElementById('adminChannelSelect').value : activeChannel;
-  
-  storeCfg.isLive = true;
-  storeCfg.channels[chKey] = {
-    name: getChannelName(chKey),
-    format: cfg.protocol === 'flv' ? 'flv' : 'hls',
-    url: playbackUrl
-  };
-
-  saveStoreConfig(storeCfg);
-  loadChannel(activeChannel);
-  updateAutoUrlPreview();
-  showToast(`🚀 Own RTMP Server applied to ${getChannelName(chKey)}!`, 'success');
-}
-
-async function testOwnRtmpHealth() {
-  const cfg = getOwnRtmpConfig();
-  const healthUrl = `http://${cfg.host}:${cfg.httpPort}/health`;
-  showToast('🔍 Checking RTMP Server Health...', 'info');
-  try {
-    const res = await fetch(healthUrl, { mode: 'cors' });
-    if (res.ok) {
-      const data = await res.json();
-      showToast(`✅ RTMP Server ONLINE! (Uptime: ${Math.floor(data.uptime||0)}s)`, 'success');
-      if (document.getElementById('ownRtmpStatusBadge')) {
-        document.getElementById('ownRtmpStatusBadge').className = 'badge badge-ready';
-        document.getElementById('ownRtmpStatusBadge').textContent = 'ONLINE (Port 1935)';
-      }
-    } else {
-      showToast('⚠️ Server reachable, testing FLV playback stream...', 'success');
-    }
-  } catch (err) {
-    showToast('📡 RTMP Ingest & HTTP-FLV Playback active!', 'success');
-    if (document.getElementById('ownRtmpStatusBadge')) {
-      document.getElementById('ownRtmpStatusBadge').className = 'badge badge-ready';
-      document.getElementById('ownRtmpStatusBadge').textContent = 'READY (Port 1935)';
-    }
-  }
 }

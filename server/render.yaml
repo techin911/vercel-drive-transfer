@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: rtmp-live-server
-    env: docker
-    dockerfilePath: server/Dockerfile
-    rootDir: server
-    plan: free
-    region: singapore
