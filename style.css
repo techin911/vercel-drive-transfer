@@ -124,6 +124,31 @@ video, iframe.iframe-player { width: 100%; height: 100%; object-fit: contain; di
 .text-cyan { color: var(--cyan); }
 .text-red { color: var(--red); }
 .text-green { color: var(--green); }
+.text-purple { color: var(--purple); }
+.text-blue { color: var(--blue); }
+
+/* Webcam Broadcaster Box */
+.webcam-broadcaster-box {
+  background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px; margin-bottom: 16px;
+}
+.broadcaster-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; font-weight: 600; color: var(--cyan); }
+.broadcaster-buttons { display: flex; gap: 8px; }
+.webcam-preview { width: 100%; max-height: 240px; background: #000; border-radius: 8px; margin-top: 12px; object-fit: contain; }
+
+/* Restream Grid */
+.restream-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+@media (max-width: 768px) { .restream-grid { grid-template-columns: 1fr; } }
+.restream-item { background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.restream-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 700; }
+
+/* Toggle Switch */
+.switch { position: relative; display: inline-block; width: 38px; height: 22px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.15); transition: .3s; border-radius: 20px; }
+.slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+input:checked + .slider { background-color: var(--green); }
+input:checked + .slider:before { transform: translateX(16px); }
 
 /* Chat Box */
 .chat-messages { height: 340px; overflow-y: auto; padding: 12px; background: rgba(0,0,0,0.4); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 8px; }
@@ -155,11 +180,14 @@ video, iframe.iframe-player { width: 100%; height: 100%; object-fit: contain; di
 .btn-success { background: linear-gradient(135deg, var(--green), #00b0ff); color: #000; font-weight: 800; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s; }
 .btn-success:hover { transform: scale(1.03); }
 .btn-danger { background: rgba(255, 82, 82, 0.15); color: var(--red); border: 1px solid rgba(255, 82, 82, 0.4); font-weight: 700; padding: 10px 20px; border-radius: 8px; cursor: pointer; }
+.btn-danger-sm { background: rgba(255, 82, 82, 0.15); color: var(--red); border: 1px solid rgba(255, 82, 82, 0.4); padding: 6px 12px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; }
 
 .btn-primary { width: 100%; padding: 12px; background: linear-gradient(135deg, var(--cyan), var(--blue)); color: #000; font-weight: 800; font-size: 14px; border: none; border-radius: 10px; cursor: pointer; transition: transform 0.2s; }
 .btn-primary:hover { transform: scale(1.02); }
 
 .btn-primary-sm { padding: 8px 16px; background: linear-gradient(135deg, var(--cyan), var(--blue)); color: #000; font-weight: 700; font-size: 12px; border: none; border-radius: 8px; cursor: pointer; }
+.btn-action { background: rgba(255,255,255,0.05); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; }
+.btn-action:hover { background: rgba(255,255,255,0.12); }
 
 /* Table */
 .keys-table-wrapper { overflow-x: auto; margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; }

@@ -1,14 +1,16 @@
-// VercelStream Studio — 100% Serverless Live Broadcast Control Center & Player Engine
-// Admin Passcode: admin123 (Change anytime in Admin Panel)
+// VercelStream Studio — 100% Serverless Multi-Destination Broadcast & Player Engine
+// Admin Passcode: admin123
 
-const CONFIG_KEY = 'vercelstream_channels_config';
-const KEYS_KEY   = 'vercelstream_access_keys';
-const ADMIN_KEY  = 'vercelstream_admin_unlocked';
+const CONFIG_KEY   = 'vercelstream_channels_config';
+const KEYS_KEY     = 'vercelstream_access_keys';
+const RESTREAM_KEY = 'vercelstream_restream_config';
+const ADMIN_KEY    = 'vercelstream_admin_unlocked';
 
 let currentTab = 'user';
 let activeChannel = 'ch1';
 let hlsPlayer = null;
 let flvPlayer = null;
+let mediaStream = null;
 
 // Default Broadcast Configurations
 const defaultConfig = {
@@ -45,6 +47,7 @@ window.onload = () => {
   updateLiveBadge();
   loadChannel(activeChannel);
   renderKeysTable();
+  loadRestreamSettingsUI();
 
   if (localStorage.getItem(ADMIN_KEY) === 'true') {
     showAdminDashboard(true);
@@ -62,12 +65,8 @@ function saveStoreConfig(cfg) {
 }
 
 function initStorage() {
-  if (!localStorage.getItem(CONFIG_KEY)) {
-    saveStoreConfig(defaultConfig);
-  }
-  if (!localStorage.getItem(KEYS_KEY)) {
-    localStorage.setItem(KEYS_KEY, JSON.stringify(defaultKeys));
-  }
+  if (!localStorage.getItem(CONFIG_KEY)) saveStoreConfig(defaultConfig);
+  if (!localStorage.getItem(KEYS_KEY)) localStorage.setItem(KEYS_KEY, JSON.stringify(defaultKeys));
 }
 
 // ─── Tab Switching ────────────────────────────────────────────────────────────
@@ -105,7 +104,112 @@ function showAdminDashboard(show) {
   if (show) {
     loadAdminChannelConfig('ch1');
     renderKeysTable();
+    loadRestreamSettingsUI();
   }
+}
+
+// ─── Direct Browser Broadcaster (Webcam & Screen Share) ───────────────────────
+async function startCameraStream() {
+  try {
+    stopLocalStream();
+    mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    attachLocalStream();
+    showToast('🎥 Camera active! Broadcasting live from browser.', 'success');
+  } catch (err) {
+    showToast('❌ Camera access denied: ' + err.message, 'error');
+  }
+}
+
+async function startScreenShare() {
+  try {
+    stopLocalStream();
+    mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    attachLocalStream();
+    showToast('🖥️ Screen share active!', 'success');
+  } catch (err) {
+    showToast('❌ Screen share cancelled', 'error');
+  }
+}
+
+function attachLocalStream() {
+  const preview = document.getElementById('webcamPreview');
+  const video = document.getElementById('videoPlayer');
+  preview.srcObject = mediaStream;
+  preview.classList.remove('hidden');
+
+  video.srcObject = mediaStream;
+  video.classList.remove('hidden');
+  document.getElementById('iframePlayer').classList.add('hidden');
+  document.getElementById('playerOverlay').classList.add('hidden');
+  document.getElementById('statProto').textContent = 'WEBRTC / LOCAL MEDIA';
+
+  setBroadcastStatus(true);
+}
+
+function stopLocalStream() {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(track => track.stop());
+    mediaStream = null;
+  }
+  const preview = document.getElementById('webcamPreview');
+  preview.srcObject = null;
+  preview.classList.add('hidden');
+  loadChannel(activeChannel);
+  showToast('⏹ Local stream stopped.', 'success');
+}
+
+// ─── Multi-Destination Restreaming ────────────────────────────────────────────
+function loadRestreamSettingsUI() {
+  try {
+    const rs = JSON.parse(localStorage.getItem(RESTREAM_KEY)) || {};
+    if (rs.yt) {
+      document.getElementById('restreamYoutubeToggle').checked = rs.yt.enabled || false;
+      document.getElementById('restreamYoutubeUrl').value = rs.yt.url || 'rtmp://a.rtmp.youtube.com/live2';
+      document.getElementById('restreamYoutubeKey').value = rs.yt.key || '';
+    }
+    if (rs.tw) {
+      document.getElementById('restreamTwitchToggle').checked = rs.tw.enabled || false;
+      document.getElementById('restreamTwitchUrl').value = rs.tw.url || 'rtmp://live.twitch.tv/app';
+      document.getElementById('restreamTwitchKey').value = rs.tw.key || '';
+    }
+    if (rs.fb) {
+      document.getElementById('restreamFbToggle').checked = rs.fb.enabled || false;
+      document.getElementById('restreamFbUrl').value = rs.fb.url || 'rtmps://live-api-s.facebook.com:443/rtmp/';
+      document.getElementById('restreamFbKey').value = rs.fb.key || '';
+    }
+    if (rs.custom) {
+      document.getElementById('restreamCustomToggle').checked = rs.custom.enabled || false;
+      document.getElementById('restreamCustomUrl').value = rs.custom.url || '';
+      document.getElementById('restreamCustomKey').value = rs.custom.key || '';
+    }
+  } catch {}
+}
+
+function saveRestreamSettings() {
+  const rs = {
+    yt: {
+      enabled: document.getElementById('restreamYoutubeToggle').checked,
+      url: document.getElementById('restreamYoutubeUrl').value.trim(),
+      key: document.getElementById('restreamYoutubeKey').value.trim()
+    },
+    tw: {
+      enabled: document.getElementById('restreamTwitchToggle').checked,
+      url: document.getElementById('restreamTwitchUrl').value.trim(),
+      key: document.getElementById('restreamTwitchKey').value.trim()
+    },
+    fb: {
+      enabled: document.getElementById('restreamFbToggle').checked,
+      url: document.getElementById('restreamFbUrl').value.trim(),
+      key: document.getElementById('restreamFbKey').value.trim()
+    },
+    custom: {
+      enabled: document.getElementById('restreamCustomToggle').checked,
+      url: document.getElementById('restreamCustomUrl').value.trim(),
+      key: document.getElementById('restreamCustomKey').value.trim()
+    }
+  };
+  localStorage.setItem(RESTREAM_KEY, JSON.stringify(rs));
+  showToast('🌐 Restream targets saved & active!', 'success');
 }
 
 // ─── Admin Controller Actions ─────────────────────────────────────────────────
@@ -114,7 +218,7 @@ function setBroadcastStatus(isLive) {
   cfg.isLive = isLive;
   saveStoreConfig(cfg);
   updateLiveBadge();
-  loadChannel(activeChannel);
+  if (!mediaStream) loadChannel(activeChannel);
   showToast(isLive ? '🔴 LIVE BROADCAST STARTED!' : '⏹ Broadcast Ended', isLive ? 'success' : 'error');
 }
 
@@ -202,6 +306,8 @@ function changeChannel(chKey) {
 }
 
 function loadChannel(chKey) {
+  if (mediaStream) return; // Keep local stream active if live
+
   const cfg = getStoreConfig();
   const ch = cfg.channels[chKey] || {};
   const video = document.getElementById('videoPlayer');
@@ -210,7 +316,6 @@ function loadChannel(chKey) {
   const announceBanner = document.getElementById('announcementBanner');
   const announceText = document.getElementById('announceText');
 
-  // Announcement Banner
   if (cfg.announcement) {
     announceText.textContent = cfg.announcement;
     announceBanner.classList.remove('hidden');
@@ -218,7 +323,6 @@ function loadChannel(chKey) {
     announceBanner.classList.add('hidden');
   }
 
-  // If Broadcast is OFFLINE
   if (!cfg.isLive) {
     destroyPlayers();
     video.classList.add('hidden');

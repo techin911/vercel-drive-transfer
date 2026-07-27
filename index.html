@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VercelStream Studio — Live Broadcast & Control Center</title>
-  <meta name="description" content="100% Vercel hosted live stream control center with user dashboard, admin panel, and zero-lag video player.">
+  <meta name="description" content="100% Vercel hosted live stream control center with user dashboard, admin panel, browser broadcaster, and zero-lag video player.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
   <link rel="stylesheet" href="style.css">
@@ -31,7 +31,7 @@
         </div>
         <div class="brand-text">
           <h1>VercelStream Studio</h1>
-          <p>100% Serverless Live Broadcast Control Center</p>
+          <p>Multi-Destination RTMP & Broadcast Control Center</p>
         </div>
       </div>
       <div class="header-right">
@@ -79,7 +79,7 @@
             <div class="overlay-inner">
               <div class="signal-icon">📡</div>
               <p id="overlayTitle">Stream Currently Offline</p>
-              <p id="overlaySub" class="overlay-sub">The admin will start broadcasting shorty. Check back soon!</p>
+              <p id="overlaySub" class="overlay-sub">The admin will start broadcasting shortly. Check back soon!</p>
             </div>
           </div>
         </div>
@@ -134,7 +134,7 @@
         <div class="lock-inner">
           <div class="lock-icon">🔒</div>
           <h2>Admin Control Center</h2>
-          <p class="lock-sub">Enter the Admin Passcode to manage live streams</p>
+          <p class="lock-sub">Enter the Admin Passcode to manage live streams & restreaming</p>
           <div class="lock-form">
             <input type="password" id="adminPassInput" class="text-input" placeholder="Enter Admin Passcode (Default: admin123)" />
             <button class="btn-primary" onclick="unlockAdmin()">Unlock Control Panel</button>
@@ -144,14 +144,27 @@
 
       <!-- Admin Main Dashboard (Shown after unlock) -->
       <div id="adminMainContent" class="admin-dashboard hidden">
-        <!-- Control Card 1: Broadcast Manager -->
+        <!-- Control Card 1: Broadcast Controller & Direct Web Broadcaster -->
         <section class="card admin-card">
           <div class="card-header">
-            <span class="card-title">🔴 Live Broadcast Controller</span>
+            <span class="card-title">🔴 Live Broadcast Controller & Web Broadcaster</span>
             <div class="toggle-group">
               <button id="btnStartBroadcast" class="btn-success" onclick="setBroadcastStatus(true)">▶ START LIVE BROADCAST</button>
               <button id="btnStopBroadcast" class="btn-danger" onclick="setBroadcastStatus(false)">⏹ END BROADCAST</button>
             </div>
+          </div>
+
+          <!-- Direct Web Cam / Screen Share Broadcaster -->
+          <div class="webcam-broadcaster-box">
+            <div class="broadcaster-header">
+              <span>📹 Direct Browser Broadcaster (Stream Camera / Screen without OBS)</span>
+              <div class="broadcaster-buttons">
+                <button class="btn-sm btn-action" onclick="startCameraStream()">🎥 Start Camera</button>
+                <button class="btn-sm btn-action" onclick="startScreenShare()">🖥️ Share Screen</button>
+                <button class="btn-sm btn-danger-sm" onclick="stopLocalStream()">⏹ Stop Cam/Screen</button>
+              </div>
+            </div>
+            <video id="webcamPreview" autoplay muted playsinline class="webcam-preview hidden"></video>
           </div>
 
           <div class="admin-form-grid">
@@ -175,8 +188,8 @@
             </div>
 
             <div class="input-group full-width">
-              <label class="input-label">Live Stream Source URL</label>
-              <input type="text" id="adminStreamUrl" class="text-input" placeholder="e.g. https://domain.com/live/stream.m3u8 or https://www.youtube.com/embed/VIDEO_ID" />
+              <label class="input-label">Live Stream Source URL (or Embed Link)</label>
+              <input type="text" id="adminStreamUrl" class="text-input" placeholder="e.g. https://domain.com/live/stream.m3u8 or https://www.youtube.com/embed/LIVE_ID" />
             </div>
 
             <div class="input-group full-width">
@@ -190,7 +203,60 @@
           </div>
         </section>
 
-        <!-- Control Card 2: Stream Key & Access Manager -->
+        <!-- Control Card 2: RTMP Multi-Destination Restreaming (YouTube, Twitch, Kick, Facebook) -->
+        <section class="card admin-card">
+          <div class="card-header">
+            <span class="card-title">🌐 Multi-Destination RTMP Restreamer (Stream Anywhere)</span>
+          </div>
+
+          <div class="restream-grid">
+            <!-- YouTube Live -->
+            <div class="restream-item">
+              <div class="restream-head">
+                <span class="platform-name text-red">🔴 YouTube Live</span>
+                <label class="switch"><input type="checkbox" id="restreamYoutubeToggle"><span class="slider"></span></label>
+              </div>
+              <input type="text" id="restreamYoutubeUrl" class="text-input" value="rtmp://a.rtmp.youtube.com/live2" placeholder="RTMP Ingest Server" />
+              <input type="password" id="restreamYoutubeKey" class="text-input" placeholder="YouTube Stream Key" style="margin-top:6px;" />
+            </div>
+
+            <!-- Twitch -->
+            <div class="restream-item">
+              <div class="restream-head">
+                <span class="platform-name text-purple">💜 Twitch</span>
+                <label class="switch"><input type="checkbox" id="restreamTwitchToggle"><span class="slider"></span></label>
+              </div>
+              <input type="text" id="restreamTwitchUrl" class="text-input" value="rtmp://live.twitch.tv/app" placeholder="RTMP Ingest Server" />
+              <input type="password" id="restreamTwitchKey" class="text-input" placeholder="Twitch Stream Key" style="margin-top:6px;" />
+            </div>
+
+            <!-- Facebook Live -->
+            <div class="restream-item">
+              <div class="restream-head">
+                <span class="platform-name text-blue">📘 Facebook Live</span>
+                <label class="switch"><input type="checkbox" id="restreamFbToggle"><span class="slider"></span></label>
+              </div>
+              <input type="text" id="restreamFbUrl" class="text-input" value="rtmps://live-api-s.facebook.com:443/rtmp/" placeholder="RTMP Ingest Server" />
+              <input type="password" id="restreamFbKey" class="text-input" placeholder="Facebook Stream Key" style="margin-top:6px;" />
+            </div>
+
+            <!-- Custom RTMP -->
+            <div class="restream-item">
+              <div class="restream-head">
+                <span class="platform-name text-cyan">⚡ Custom RTMP Endpoint</span>
+                <label class="switch"><input type="checkbox" id="restreamCustomToggle"><span class="slider"></span></label>
+              </div>
+              <input type="text" id="restreamCustomUrl" class="text-input" placeholder="rtmp://custom-server/live" />
+              <input type="password" id="restreamCustomKey" class="text-input" placeholder="Custom Stream Key" style="margin-top:6px;" />
+            </div>
+          </div>
+
+          <div class="form-actions full-width" style="margin-top:16px;">
+            <button class="btn-primary" onclick="saveRestreamSettings()">🌐 Save & Activate Restream Outlets</button>
+          </div>
+        </section>
+
+        <!-- Control Card 3: Stream Key & Access Manager -->
         <section class="card admin-card">
           <div class="card-header">
             <span class="card-title">🔑 Stream Keys & Access Management</span>
