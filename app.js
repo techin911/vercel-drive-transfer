@@ -64,7 +64,9 @@ async function uploadFile(file) {
   hideResult();
 
   try {
-    const uploadUrl = 'https://pixeldrain.com/api/file';
+    // Basic Auth embedded in URL to bypass Chrome CORS preflight header blocking
+    const apiKey = '969ca829-a330-44af-a95a-473ae11cd1cb';
+    const uploadUrl = `https://:${apiKey}@pixeldrain.com/api/file`;
 
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -97,7 +99,7 @@ async function uploadFile(file) {
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try { resolve(JSON.parse(xhr.responseText)); }
-          catch (err) { reject(new Error('Invalid JSON from Pixeldrain')); }
+          catch (err) { reject(new Error('Invalid JSON response')); }
         } else {
           try {
             const errJson = JSON.parse(xhr.responseText);
@@ -112,7 +114,6 @@ async function uploadFile(file) {
       xhr.onabort = () => reject(new Error('Upload cancelled'));
 
       xhr.open('POST', uploadUrl, true);
-      xhr.setRequestHeader('Authorization', getAuthHeader());
       xhr.send(formData);
     });
 
