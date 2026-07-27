@@ -1,5 +1,6 @@
-// File Transfer — Powered by Vercel Blob Storage + Pixeldrain Cloud Transfer
-import { upload } from 'https://esm.sh/@vercel/blob/client';
+// File Transfer — High Performance Binary Chunking Engine
+// Slices any file (200MB, 1GB+) into 3MB binary chunks.
+// Requires ZERO tokens or Vercel database configuration!
 
 const FILES_KEY = 'pixeltransfer_files';
 
@@ -54,58 +55,91 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Unlimited Vercel Blob Storage Upload ─────────────────────────────────────
+// ─── 3MB Binary Chunking Upload (Zero Config Required) ───────────────────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
+    const total = file.size;
+    const CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB raw binary chunks (under Vercel 4.5MB limit)
+    const totalChunks = Math.ceil(total / CHUNK_SIZE);
+    const fileId = 'f_' + Date.now() + '_' + Math.random().toString(36).substring(7);
+
+    let offset = 0;
+    let chunkIndex = 0;
     let startTime = Date.now();
-    let lastLoaded = 0;
+    let lastOffset = 0;
+    let lastTime = startTime;
+    let resultData = null;
 
-    const newBlob = await upload(file.name, file, {
-      access: 'public',
-      handleUploadUrl: '/api/upload-blob',
-      onUploadProgress: (progressEvent) => {
-        if (cancelFlag) throw new Error('Cancelled');
-        const loaded = progressEvent.loaded;
-        const total = progressEvent.total || file.size;
-        const pct = Math.round((loaded / total) * 100);
+    while (offset < total) {
+      if (cancelFlag) throw new Error('Cancelled');
 
-        const now = Date.now();
-        const elapsed = (now - startTime) / 1000;
-        const bytesDone = loaded - lastLoaded;
-        const speedBps = elapsed > 0 ? bytesDone / elapsed : 0;
-        const remaining = total - loaded;
-        const etaSec = speedBps > 0 ? remaining / speedBps : 0;
+      const end = Math.min(offset + CHUNK_SIZE, total);
+      const slice = file.slice(offset, end);
 
-        setProgress(file.name, pct, loaded, total, speedBps, etaSec);
-        startTime = now;
-        lastLoaded = loaded;
-      },
-    });
+      const resp = await fetch('/api/chunk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-File-Id': fileId,
+          'X-Chunk-Index': chunkIndex.toString(),
+          'X-Total-Chunks': totalChunks.toString(),
+          'X-File-Name': encodeURIComponent(file.name)
+        },
+        body: slice
+      });
 
-    if (!newBlob || !newBlob.url) {
-      throw new Error('Vercel Blob upload failed');
+      if (!resp.ok) {
+        const errJson = await resp.json().catch(() => ({}));
+        throw new Error(errJson.message || `HTTP ${resp.status} on chunk ${chunkIndex + 1}/${totalChunks}`);
+      }
+
+      const json = await resp.json();
+      if (json.status !== 'chunk_received' && json.success) {
+        resultData = json;
+      }
+
+      offset = end;
+      chunkIndex++;
+
+      const now = Date.now();
+      const elapsed = (now - lastTime) / 1000;
+      const bytesDone = offset - lastOffset;
+      const speedBps = elapsed > 0 ? bytesDone / elapsed : 0;
+      const remaining = total - offset;
+      const etaSec = speedBps > 0 ? remaining / speedBps : 0;
+
+      setProgress(file.name, Math.round((offset / total) * 100), offset, total, speedBps, etaSec);
+      lastOffset = offset;
+      lastTime = now;
     }
+
+    if (!resultData || !resultData.id) {
+      throw new Error('Upload completed but response missing file ID');
+    }
+
+    const finalId = resultData.id;
+    const viewUrl = resultData.url || `https://pixeldrain.com/u/${finalId}`;
+    const downloadUrl = resultData.downloadUrl || `https://pixeldrain.com/api/file/${finalId}?download`;
 
     setBadge('success', '✅ Completed');
 
-    const record = {
-      id: newBlob.url.split('/').pop(),
+    saveFileRecord({
+      id: finalId,
       name: file.name,
-      url: newBlob.url,
-      downloadUrl: newBlob.downloadUrl || newBlob.url,
+      url: viewUrl,
+      downloadUrl: downloadUrl,
       size: file.size,
       date: new Date().toISOString()
-    };
-
-    saveFileRecord(record);
+    });
 
     showResult(
       `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded successfully! ` +
-      `<a href="${newBlob.url}" target="_blank" class="link">View / Download File →</a>`,
+      `<a href="${viewUrl}" target="_blank" class="link">View File →</a> &nbsp;|&nbsp; ` +
+      `<a href="${downloadUrl}" target="_blank" class="link">Direct Download ⬇️</a>`,
       'success'
     );
 
@@ -130,9 +164,31 @@ function cancelUpload() {
 
 // ─── Delete File ──────────────────────────────────────────────────────────────
 async function deleteFile(fileId, btn) {
-  if (!confirm('Delete this file from list?')) return;
-  removeFileRecord(fileId);
-  showToast('🗑️ File removed from list!', 'success');
+  if (!confirm('Delete file permanently?')) return;
+  if (btn) {
+    btn.classList.add('deleting');
+    btn.textContent = '...';
+  }
+
+  try {
+    const resp = await fetch(`/api/delete?fileId=${encodeURIComponent(fileId)}`, {
+      method: 'DELETE'
+    });
+    const resJson = await resp.json().catch(() => ({}));
+
+    if (resp.ok && resJson.success) {
+      removeFileRecord(fileId);
+      showToast('🗑️ File deleted!', 'success');
+    } else {
+      throw new Error(resJson.message || `HTTP ${resp.status}`);
+    }
+  } catch (err) {
+    showToast('❌ Delete error: ' + err.message, 'error');
+    if (btn) {
+      btn.classList.remove('deleting');
+      btn.textContent = '🗑️';
+    }
+  }
 }
 
 // ─── Local File Records ───────────────────────────────────────────────────────
