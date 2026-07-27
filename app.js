@@ -56,14 +56,14 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Official Pixeldrain PUT /api/file/{name} Upload ──────────────────────────
+// ─── Pixeldrain Upload via Vercel Proxy (Zero CORS Error) ────────────────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    const uploadUrl = `https://pixeldrain.com/api/file/${encodeURIComponent(file.name)}`;
+    const uploadUrl = `/api/upload?name=${encodeURIComponent(file.name)}`;
 
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -92,11 +92,11 @@ async function uploadFile(file) {
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try { resolve(JSON.parse(xhr.responseText)); }
-          catch (err) { reject(new Error('Invalid JSON response from Pixeldrain')); }
+          catch (err) { reject(new Error('Invalid JSON response')); }
         } else {
           try {
             const errJson = JSON.parse(xhr.responseText);
-            reject(new Error(errJson.message || `HTTP ${xhr.status}: ${errJson.value || ''}`));
+            reject(new Error(errJson.message || `HTTP ${xhr.status}`));
           } catch {
             reject(new Error(`Server error HTTP ${xhr.status}`));
           }
@@ -107,12 +107,12 @@ async function uploadFile(file) {
       xhr.onabort = () => reject(new Error('Upload cancelled'));
 
       xhr.open('PUT', uploadUrl, true);
-      xhr.setRequestHeader('Authorization', getAuthHeader());
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
       xhr.send(file);
     });
 
     if (!result.success || !result.id) {
-      throw new Error(result.message || 'Pixeldrain upload failed');
+      throw new Error(result.message || 'Upload failed');
     }
 
     const fileId = result.id;
@@ -157,25 +157,24 @@ function cancelUpload() {
   uploadQueue = [];
 }
 
-// ─── DELETE /api/file/{id} ────────────────────────────────────────────────────
+// ─── Delete File via Vercel Proxy ──────────────────────────────────────────────
 async function deleteFile(fileId, btn) {
-  if (!confirm('Delete this file permanently from Pixeldrain?')) return;
+  if (!confirm('Delete this file permanently?')) return;
   if (btn) {
     btn.classList.add('deleting');
     btn.textContent = '...';
   }
 
   try {
-    const resp = await fetch(`https://pixeldrain.com/api/file/${fileId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': getAuthHeader() }
+    const resp = await fetch(`/api/delete?fileId=${encodeURIComponent(fileId)}`, {
+      method: 'DELETE'
     });
 
     const resJson = await resp.json().catch(() => ({}));
 
     if (resp.ok && resJson.success) {
       removeFileRecord(fileId);
-      showToast('🗑️ File deleted from Pixeldrain!', 'success');
+      showToast('🗑️ File deleted!', 'success');
     } else {
       throw new Error(resJson.value || resJson.message || `HTTP ${resp.status}`);
     }
