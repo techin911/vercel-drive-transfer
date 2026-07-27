@@ -136,7 +136,7 @@ async function uploadFile(file) {
     });
 
     showResult(
-      `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded to Pixeldrain! ` +
+      `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded successfully! ` +
       `<a href="${viewUrl}" target="_blank" class="link">View File →</a> &nbsp;|&nbsp; ` +
       `<a href="${downloadUrl}" target="_blank" class="link">Direct Download ⬇️</a>`,
       'success'
