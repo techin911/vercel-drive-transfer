@@ -72,17 +72,37 @@ async function uploadFile(file) {
       throw new Error(errData.error || `Server Error HTTP ${sessionResp.status}`);
     }
 
-    const { uploadUrl } = await sessionResp.json();
+    const { uploadUrl, mode } = await sessionResp.json();
     if (!uploadUrl) throw new Error('No upload session URL received');
 
-    // 2. Upload chunks directly to the session URL
-    const fileData = await uploadChunks(file, uploadUrl);
+    let fileData = {};
+
+    if (mode === 'webhook') {
+      // Base64 Webhook Upload
+      const base64 = await readFileAsBase64(file, (pct) => {
+        setProgress(file.name, Math.round(pct * 0.5), file.size * (pct * 0.5), file.size, 0, 0);
+      });
+      
+      setProgress(file.name, 75, file.size * 0.75, file.size, 0, 0);
+      
+      const gasResp = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: file.name, content: base64 })
+      });
+      
+      fileData = await gasResp.json().catch(() => ({}));
+      setProgress(file.name, 100, file.size, file.size, 0, 0);
+    } else {
+      // Direct Resumable Chunked Upload
+      fileData = await uploadChunks(file, uploadUrl);
+    }
 
     setBadge('success', '✅ Completed');
     saveFileRecord({
-      id: fileData.id || ('f_' + Date.now()),
-      name: fileData.name || file.name,
-      url: fileData.id ? `https://drive.google.com/file/d/${fileData.id}/view` : '#',
+      id: fileData.fileId || fileData.id || ('f_' + Date.now()),
+      name: fileData.fileName || fileData.name || file.name,
+      url: fileData.fileUrl || (fileData.id ? `https://drive.google.com/file/d/${fileData.id}/view` : '#'),
       size: file.size,
       mimeType: file.type,
       date: new Date().toISOString()
@@ -90,7 +110,7 @@ async function uploadFile(file) {
 
     showResult(
       `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded successfully! ` +
-      (fileData.id ? `<a href="https://drive.google.com/file/d/${fileData.id}/view" target="_blank" class="link">Open File →</a>` : ''),
+      (fileData.fileUrl || fileData.id ? `<a href="${fileData.fileUrl || `https://drive.google.com/file/d/${fileData.id}/view`}" target="_blank" class="link">Open File →</a>` : ''),
       'success'
     );
   } catch (err) {
@@ -105,6 +125,18 @@ async function uploadFile(file) {
   }
 
   setTimeout(() => setBadge('ready', 'Ready'), 4000);
+}
+
+function readFileAsBase64(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+    };
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 async function uploadChunks(file, uploadUrl) {
