@@ -110,7 +110,7 @@
           <div class="input-group">
             <label class="input-label" for="inputRtmpUrl">RTMP Ingest Server URL (OBS)</label>
             <div class="input-with-btn">
-              <input type="text" id="inputRtmpUrl" class="text-input" value="rtmp://localhost/live" readonly />
+              <input type="text" id="inputRtmpUrl" class="text-input" value="rtmp://rtmp-live-server.onrender.com/live" readonly />
               <button class="btn-copy" onclick="copyInput('inputRtmpUrl')">Copy</button>
             </div>
           </div>
@@ -148,7 +148,7 @@
           <ol class="guide-steps">
             <li>Open <strong>OBS Studio</strong> → <strong>Settings</strong> → <strong>Stream</strong></li>
             <li>Service: <strong>Custom...</strong></li>
-            <li>Server: <code>rtmp://localhost/live</code></li>
+            <li>Server: <code>rtmp://rtmp-live-server.onrender.com/live</code></li>
             <li>Stream Key: <code>stream</code></li>
             <li>Click <strong>Start Streaming</strong> → Video plays live above in <strong>&lt;0.8s</strong>!</li>
           </ol>
