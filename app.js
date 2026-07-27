@@ -56,14 +56,14 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Direct High-Speed Upload via Vercel Edge Streaming Proxy ──────────────
+// ─── Direct Upload to Vercel Temp Storage + Hidden Pixeldrain Transfer ─────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    const uploadUrl = `/api/upload?name=${encodeURIComponent(file.name)}`;
+    const uploadUrl = '/api/temp-upload';
 
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -92,7 +92,7 @@ async function uploadFile(file) {
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try { resolve(JSON.parse(xhr.responseText)); }
-          catch (err) { reject(new Error('Invalid JSON response')); }
+          catch (err) { reject(new Error('Invalid response format')); }
         } else {
           try {
             const errJson = JSON.parse(xhr.responseText);
@@ -106,18 +106,19 @@ async function uploadFile(file) {
       xhr.onerror = () => reject(new Error('Network connection error'));
       xhr.onabort = () => reject(new Error('Upload cancelled'));
 
-      xhr.open('PUT', uploadUrl, true);
+      xhr.open('POST', uploadUrl, true);
       xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
       xhr.send(file);
     });
 
     if (!result.success || !result.id) {
-      throw new Error(result.message || 'Upload failed');
+      throw new Error(result.message || 'Transfer failed');
     }
 
     const fileId = result.id;
-    const viewUrl = `https://pixeldrain.com/u/${fileId}`;
-    const downloadUrl = `https://pixeldrain.com/api/file/${fileId}?download`;
+    const viewUrl = result.url || `https://pixeldrain.com/u/${fileId}`;
+    const downloadUrl = result.downloadUrl || `https://pixeldrain.com/api/file/${fileId}?download`;
 
     setBadge('success', '✅ Completed');
 
