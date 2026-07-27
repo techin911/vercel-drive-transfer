@@ -1,13 +1,14 @@
-// DriveTransfer — Secure Google Drive Uploader
-// Protected OAuth Client ID + User Profile Display + Direct Upload
+// DriveTransfer — Ultrafast Cloud Uploader
+// Permanent Connection + Token Persistence + Direct Resumable Upload
 
-// Obfuscated Client ID (Protected against simple scrapers/source inspection)
 function getSecureClientId() {
   const enc = ["MjE4OTE0MDAxNzQyLWVrNnB0c2JuOHZvaXVqOGRhNXVxYW1kYTU3a2Q5dmIuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20="];
   try { return atob(enc[0]); } catch { return ''; }
 }
 
 const CLIENT_ID_KEY   = 'drivetransfer_client_id';
+const TOKEN_KEY       = 'drivetransfer_access_token';
+const EXPIRY_KEY      = 'drivetransfer_token_expiry';
 const FILES_KEY       = 'drivetransfer_files';
 const CHUNK_SIZE      = 8 * 1024 * 1024;   // 8 MB chunks
 const DRIVE_UPLOAD    = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable';
@@ -16,8 +17,8 @@ const SCOPES          = 'https://www.googleapis.com/auth/drive.file https://www.
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let clientId     = localStorage.getItem(CLIENT_ID_KEY) || getSecureClientId();
-let accessToken  = null;
-let tokenExpiry  = 0;
+let accessToken  = localStorage.getItem(TOKEN_KEY) || null;
+let tokenExpiry  = parseInt(localStorage.getItem(EXPIRY_KEY) || '0', 10);
 let tokenClient  = null;
 let gisReady     = false;
 let uploadQueue  = [];
@@ -28,7 +29,12 @@ let userProfile  = null;
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 window.onload = () => {
-  updateStatusDot();
+  if (isAuthenticated()) {
+    updateUserHeader();
+    updateStatusDot();
+  } else {
+    updateStatusDot();
+  }
   renderFilesList();
   setupDropzone();
   waitForGIS();
@@ -38,6 +44,12 @@ function waitForGIS() {
   if (window.google && google.accounts) {
     gisReady = true;
     initTokenClient();
+    // Silent auto connect if token expired or missing
+    if (!isAuthenticated()) {
+      setTimeout(() => {
+        try { tokenClient.requestAccessToken({ prompt: '' }); } catch (e) {}
+      }, 500);
+    }
   } else {
     setTimeout(waitForGIS, 300);
   }
@@ -53,54 +65,28 @@ function initTokenClient() {
 
 async function onTokenResponse(response) {
   if (response.error) {
-    showToast('❌ Auth error: ' + response.error, 'error');
     return;
   }
   accessToken = response.access_token;
   tokenExpiry = Date.now() + (parseInt(response.expires_in) * 1000) - 60000;
   
-  // Fetch Connected User Profile & Name
-  await fetchUserProfile();
-  
-  updateStatusDot();
-  showToast('✅ Connected to Google Drive!', 'success');
+  // Permanent Storage of Auth Tokens
+  localStorage.setItem(TOKEN_KEY, accessToken);
+  localStorage.setItem(EXPIRY_KEY, tokenExpiry.toString());
 
-  // If user dropped or selected files before auth, continue upload
+  updateUserHeader();
+  updateStatusDot();
+  showToast('✅ Account Connected!', 'success');
+
   if (uploadQueue.length && !isUploading) {
     processQueue();
   }
 }
 
-async function fetchUserProfile() {
-  try {
-    const resp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { 'Authorization': 'Bearer ' + accessToken }
-    });
-    if (resp.ok) {
-      userProfile = await resp.json();
-      updateUserHeader();
-    }
-  } catch (err) {
-    console.error('Failed to fetch user profile', err);
-  }
-}
-
-function maskEmail(email) {
-  if (!email || !email.includes('@')) return '******';
-  const [name, domain] = email.split('@');
-  const maskedName = name[0] + '*'.repeat(Math.max(5, name.length - 1));
-  return maskedName + '@' + domain;
-}
-
 function updateUserHeader() {
   const btn = document.getElementById('btnSignIn');
   if (!btn) return;
-
-  const avatar = userProfile?.picture 
-    ? `<img src="${userProfile.picture}" style="width:20px;height:20px;border-radius:50%;margin-right:6px;vertical-align:middle;" />`
-    : '👤 ';
-    
-  btn.innerHTML = `${avatar} <span>✓ Connected</span>`;
+  btn.innerHTML = `<span>✓ Connected</span>`;
   btn.style.background = 'rgba(0,230,118,0.15)';
   btn.style.color = '#00e676';
   btn.style.borderColor = 'rgba(0,230,118,0.4)';
@@ -139,10 +125,10 @@ function updateStatusDot() {
   const dot = document.getElementById('statusDot');
   if (isAuthenticated()) {
     dot.className = 'status-dot connected';
-    dot.title = 'Connected: ' + (userProfile?.email || 'Google User');
+    dot.title = 'Connected';
   } else {
     dot.className = 'status-dot';
-    dot.title = 'Click Connect Google Drive';
+    dot.title = 'Click Connect Account';
   }
 }
 
@@ -222,12 +208,12 @@ async function uploadFile(file) {
     }
 
     const uploadUrl = initResp.headers.get('Location');
-    if (!uploadUrl) throw new Error('No upload URL returned from Google Drive');
+    if (!uploadUrl) throw new Error('No upload URL returned');
 
     // 2. Upload chunks with live size tracking
     const fileData = await uploadChunks(file, uploadUrl);
 
-    setBadge('success', '✅ Saved to Drive');
+    setBadge('success', '✅ Completed');
     saveFileRecord({
       id: fileData.id,
       name: fileData.name,
@@ -238,7 +224,7 @@ async function uploadFile(file) {
     });
 
     showResult(
-      `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) saved to Google Drive! ` +
+      `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded successfully! ` +
       `<a href="https://drive.google.com/file/d/${fileData.id}/view" target="_blank" class="link">Open File →</a>`,
       'success'
     );
@@ -326,7 +312,7 @@ function cancelUpload() {
 
 // ─── Delete ───────────────────────────────────────────────────────────────────
 async function deleteFile(fileId, btn) {
-  if (!confirm('Delete this file from Google Drive?')) return;
+  if (!confirm('Delete this file?')) return;
   btn.classList.add('deleting');
   btn.textContent = '...';
 
@@ -339,7 +325,7 @@ async function deleteFile(fileId, btn) {
 
     if (resp.ok || resp.status === 204) {
       removeFileRecord(fileId);
-      showToast('🗑️ File deleted from Drive.', 'success');
+      showToast('🗑️ File deleted.', 'success');
     } else {
       const err = await resp.json().catch(() => ({}));
       throw new Error(err.error?.message || `HTTP ${resp.status}`);
@@ -367,7 +353,7 @@ function removeFileRecord(fileId) {
   renderFilesList();
 }
 function clearAllFiles() {
-  if (!confirm('Clear list? (Files stay in Google Drive)')) return;
+  if (!confirm('Clear list?')) return;
   localStorage.removeItem(FILES_KEY);
   renderFilesList();
 }
@@ -399,7 +385,7 @@ function renderFilesList() {
   }).join('');
 }
 
-function showProgress(name, total) {
+showProgress = function(name, total) {
   document.getElementById('progressSection').classList.remove('hidden');
   document.getElementById('progressFileName').textContent = name;
   document.getElementById('progressPct').textContent = '0%';
