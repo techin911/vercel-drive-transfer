@@ -56,14 +56,15 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Pixeldrain Upload via Vercel Proxy (Zero CORS Error) ────────────────────
+// ─── Direct Pixeldrain High-Speed Upload (No Size or Timeout Limits) ─────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    const uploadUrl = `/api/upload?name=${encodeURIComponent(file.name)}`;
+    const apiKey = '969ca829-a330-44af-a95a-473ae11cd1cb';
+    const uploadUrl = `https://pixeldrain.com/api/file/${encodeURIComponent(file.name)}?auth=${apiKey}`;
 
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -92,7 +93,7 @@ async function uploadFile(file) {
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try { resolve(JSON.parse(xhr.responseText)); }
-          catch (err) { reject(new Error('Invalid JSON response')); }
+          catch (err) { reject(new Error('Invalid response from server')); }
         } else {
           try {
             const errJson = JSON.parse(xhr.responseText);
@@ -103,11 +104,10 @@ async function uploadFile(file) {
         }
       };
 
-      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.onerror = () => reject(new Error('Network connection interrupted'));
       xhr.onabort = () => reject(new Error('Upload cancelled'));
 
       xhr.open('PUT', uploadUrl, true);
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
       xhr.send(file);
     });
 
