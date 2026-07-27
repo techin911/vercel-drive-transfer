@@ -63,9 +63,7 @@ async function onTokenResponse(response) {
   await fetchUserProfile();
   
   updateStatusDot();
-  const rawEmail = userProfile?.email || '';
-  const maskedEmail = rawEmail ? maskEmail(rawEmail) : '';
-  showToast('✅ Connected as ' + (userProfile?.name || maskedEmail || 'Google User'), 'success');
+  showToast('✅ Connected to Google Drive!', 'success');
 
   // If user dropped or selected files before auth, continue upload
   if (uploadQueue.length && !isUploading) {
@@ -97,16 +95,12 @@ function maskEmail(email) {
 function updateUserHeader() {
   const btn = document.getElementById('btnSignIn');
   if (!btn) return;
-  
-  const rawEmail = userProfile?.email || '';
-  const maskedEmail = rawEmail ? maskEmail(rawEmail) : 'Account Connected';
-  const label = `✓ Connected (${maskedEmail})`;
 
   const avatar = userProfile?.picture 
     ? `<img src="${userProfile.picture}" style="width:20px;height:20px;border-radius:50%;margin-right:6px;vertical-align:middle;" />`
     : '👤 ';
     
-  btn.innerHTML = `${avatar} <span>${escHtml(label)}</span>`;
+  btn.innerHTML = `${avatar} <span>✓ Connected</span>`;
   btn.style.background = 'rgba(0,230,118,0.15)';
   btn.style.color = '#00e676';
   btn.style.borderColor = 'rgba(0,230,118,0.4)';
