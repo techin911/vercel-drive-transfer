@@ -1,6 +1,4 @@
-// File Transfer — High Performance Binary Chunking Engine
-// Slices any file (200MB, 1GB+) into 3MB binary chunks.
-// Requires ZERO tokens or Vercel database configuration!
+// Unified App Engine — File Transfer & RTMP Live Studio
 
 const FILES_KEY = 'pixeltransfer_files';
 
@@ -8,9 +6,15 @@ let uploadQueue = [];
 let isUploading = false;
 let cancelFlag  = false;
 
+// ─── RTMP Live Stream Player State ───────────────────────────────────────────
+let rtmpPlayerInstance = null;
+let currentFlvUrl = localStorage.getItem('flv_playback_url') || (window.location.origin + '/live/stream.flv');
+let currentStreamKey = localStorage.getItem('rtmp_stream_key') || 'stream';
+
 window.onload = () => {
   renderFilesList();
   setupDropzone();
+  initRtmpPlayer(currentFlvUrl);
 };
 
 window.handleFileSelect = handleFileSelect;
@@ -18,7 +22,144 @@ window.cancelUpload = cancelUpload;
 window.deleteFile = deleteFile;
 window.clearAllFiles = clearAllFiles;
 
-// ─── Dropzone ─────────────────────────────────────────────────────────────────
+// RTMP Player global window functions
+window.reloadPlayer = reloadPlayer;
+window.toggleMute = toggleMute;
+window.toggleFullscreen = toggleFullscreen;
+window.copyInput = copyInput;
+window.applyPlaybackUrl = applyPlaybackUrl;
+
+// ─── RTMP Live Player Engine (mpegts.js / Hls.js) ─────────────────────────────
+function initRtmpPlayer(url) {
+  const video = document.getElementById('videoPlayer');
+  const overlay = document.getElementById('playerOverlay');
+  const overlayTitle = document.getElementById('overlayTitle');
+
+  if (!video) return;
+
+  if (rtmpPlayerInstance) {
+    try {
+      rtmpPlayerInstance.unload();
+      rtmpPlayerInstance.detachMediaElement();
+      rtmpPlayerInstance.destroy();
+    } catch (e) {
+      console.warn('Player cleanup error:', e);
+    }
+    rtmpPlayerInstance = null;
+  }
+
+  if (overlayTitle) overlayTitle.textContent = 'Connecting to Stream...';
+
+  if (window.mpegts && mpegts.isSupported()) {
+    rtmpPlayerInstance = mpegts.createPlayer({
+      type: 'flv',
+      isLive: true,
+      url: url,
+      hasAudio: true,
+      hasVideo: true
+    }, {
+      enableStashBuffer: false,
+      stashInitialSize: 128,
+      liveBufferLatencyChasing: true,
+      liveBufferLatencyMax: 1.0,
+      liveBufferLatencyMin: 0.2,
+      autoCleanupSourceBuffer: true
+    });
+
+    rtmpPlayerInstance.attachMediaElement(video);
+    rtmpPlayerInstance.load();
+
+    rtmpPlayerInstance.play().then(() => {
+      setLiveBadge(true);
+      if (overlay) overlay.classList.add('hidden');
+      updateProtocolPill('HTTP-FLV (<0.8s)');
+    }).catch(() => {
+      setLiveBadge(false);
+      if (overlay) overlay.classList.remove('hidden');
+      if (overlayTitle) overlayTitle.textContent = 'Waiting for RTMP Stream Input...';
+    });
+
+    rtmpPlayerInstance.on(mpegts.Events.ERROR, () => {
+      setLiveBadge(false);
+      if (overlay) overlay.classList.remove('hidden');
+      if (overlayTitle) overlayTitle.textContent = 'RTMP Stream Offline (Waiting for OBS)';
+    });
+
+  } else if (window.Hls && Hls.isSupported()) {
+    const hlsUrl = url.replace('.flv', '/index.m3u8');
+    const hls = new Hls({ maxBufferLength: 3, liveBackBufferLength: 0 });
+    hls.loadSource(hlsUrl);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      video.play();
+      setLiveBadge(true);
+      if (overlay) overlay.classList.add('hidden');
+      updateProtocolPill('HLS Live');
+    });
+  }
+}
+
+function applyPlaybackUrl() {
+  const input = document.getElementById('inputFlvUrl');
+  if (input && input.value) {
+    currentFlvUrl = input.value.trim();
+    localStorage.setItem('flv_playback_url', currentFlvUrl);
+    initRtmpPlayer(currentFlvUrl);
+    showToast('📡 Connecting to new stream URL...', 'success');
+  }
+}
+
+function reloadPlayer() {
+  initRtmpPlayer(currentFlvUrl);
+}
+
+function toggleMute() {
+  const video = document.getElementById('videoPlayer');
+  const btn = document.getElementById('muteBtn');
+  if (!video) return;
+  video.muted = !video.muted;
+  if (btn) btn.textContent = video.muted ? '🔇 Unmute' : '🔊 Mute';
+}
+
+function toggleFullscreen() {
+  const video = document.getElementById('videoPlayer');
+  if (!video) return;
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    video.requestFullscreen().catch(() => {});
+  }
+}
+
+function copyInput(id) {
+  const input = document.getElementById(id);
+  if (!input) return;
+  input.select();
+  navigator.clipboard.writeText(input.value).then(() => {
+    showToast('📋 Copied to clipboard!', 'success');
+  }).catch(() => {});
+}
+
+function setLiveBadge(isLive) {
+  const badge = document.getElementById('liveBadge');
+  const text = document.getElementById('liveBadgeText');
+  if (!badge) return;
+  if (isLive) {
+    badge.className = 'status-badge status-live';
+    if (text) text.textContent = 'LIVE BROADCAST';
+  } else {
+    badge.className = 'status-badge status-offline';
+    if (text) text.textContent = 'RTMP OFFLINE';
+  }
+}
+
+function updateProtocolPill(txt) {
+  const p = document.getElementById('protocolPill');
+  if (p) p.textContent = txt;
+}
+
+
+// ─── File Upload & Cloud Transfer Engine (3MB Binary Chunks) ─────────────────
 function setupDropzone() {
   const dz = document.getElementById('dropzone');
   if (!dz) return;
@@ -39,7 +180,6 @@ function handleFileSelect(event) {
   event.target.value = '';
 }
 
-// ─── Queue ────────────────────────────────────────────────────────────────────
 function queueFiles(files) {
   for (const f of files) uploadQueue.push(f);
   if (!isUploading) processQueue();
@@ -55,7 +195,6 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── 3MB Binary Chunking Upload (Zero Config Required) ───────────────────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
@@ -63,7 +202,7 @@ async function uploadFile(file) {
 
   try {
     const total = file.size;
-    const CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB raw binary chunks (under Vercel 4.5MB limit)
+    const CHUNK_SIZE = 3 * 1024 * 1024;
     const totalChunks = Math.ceil(total / CHUNK_SIZE);
     const fileId = 'f_' + Date.now() + '_' + Math.random().toString(36).substring(7);
 
@@ -191,7 +330,7 @@ async function deleteFile(fileId, btn) {
   }
 }
 
-// ─── Local File Records ───────────────────────────────────────────────────────
+// ─── Local Records & UI ───────────────────────────────────────────────────────
 function getFileRecords() {
   try { return JSON.parse(localStorage.getItem(FILES_KEY)) || []; }
   catch { return []; }
@@ -216,7 +355,6 @@ function clearAllFiles() {
   renderFilesList();
 }
 
-// ─── UI Rendering ─────────────────────────────────────────────────────────────
 function renderFilesList() {
   const list = document.getElementById('filesList');
   if (!list) return;

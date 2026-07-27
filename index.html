@@ -3,11 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>File Transfer — Fast Direct Uploads</title>
-  <meta name="description" content="Fast, secure direct file transfer and cloud storage.">
+  <title>File Transfer & RTMP Live Studio</title>
+  <meta name="description" content="Ultra-fast direct file transfer and RTMP live stream broadcast player.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <!-- Low Latency Live Stream Players -->
+  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
   <div class="bg-orbs">
@@ -17,22 +21,25 @@
   </div>
 
   <div class="container">
-    <!-- Header -->
+    <!-- Main App Header -->
     <header class="header">
       <div class="brand">
         <div class="brand-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/>
-            <line x1="12" y1="3" x2="12" y2="15"/>
+            <path d="M23 7l-7 5 7 5V7z"/>
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
           </svg>
         </div>
         <div class="brand-text">
-          <h1>File Transfer</h1>
-          <p>Fast Direct Cloud Storage</p>
+          <h1>File Transfer &amp; RTMP Live Studio</h1>
+          <p>Direct File Transfers &bull; Zero-Lag Live Streaming Engine</p>
         </div>
       </div>
       <div class="header-right">
+        <div id="liveBadge" class="status-badge status-offline">
+          <span id="liveDot" class="pulse-dot"></span>
+          <span id="liveBadgeText">RTMP OFFLINE</span>
+        </div>
         <div class="status-badge">
           <span class="pulse-dot"></span>
           <span>Storage Active</span>
@@ -40,10 +47,113 @@
       </div>
     </header>
 
-    <!-- Main Grid -->
-    <main class="main-grid">
+    <!-- Section 1: RTMP Live Broadcast Player & OBS Connection -->
+    <section class="studio-grid">
+      <!-- Live Video Player Card -->
+      <div class="card player-card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="card-icon">📺</span>
+            <span class="card-title">Live Stream Broadcast Feed</span>
+            <span id="protocolPill" class="pill-badge">HTTP-FLV</span>
+          </div>
+          <div class="player-controls">
+            <button class="btn-sm btn-action" onclick="reloadPlayer()" title="Refresh Feed">🔄 Reload</button>
+            <button class="btn-sm btn-action" onclick="toggleMute()" id="muteBtn" title="Mute/Unmute">🔊 Mute</button>
+            <button class="btn-sm btn-action" onclick="toggleFullscreen()" title="Fullscreen">⛶ Fullscreen</button>
+          </div>
+        </div>
+
+        <div class="video-wrapper">
+          <video id="videoPlayer" controls autoplay muted playsinline></video>
+          
+          <div id="playerOverlay" class="player-overlay">
+            <div class="overlay-inner">
+              <div class="signal-icon">📡</div>
+              <p id="overlayTitle">Waiting for RTMP Stream Input...</p>
+              <p class="overlay-sub">Start streaming from OBS Studio, vMix, or mobile app using <code>rtmp://localhost/live</code></p>
+              <div class="pulse-bar"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="stream-stats-bar">
+          <div class="stat-item">
+            <span class="stat-label">Latency</span>
+            <span id="statLatency" class="stat-value highlight-val">&lt; 0.8 sec</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Buffer Mode</span>
+            <span id="statBuffer" class="stat-value">Zero-Lag</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Resolution</span>
+            <span id="statRes" class="stat-value">1080p / Auto</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Format</span>
+            <span id="statCodec" class="stat-value">H.264 / AAC</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- OBS Setup & Stream Controls Card -->
+      <div class="sidebar-column">
+        <div class="card config-card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="card-icon">⚙️</span>
+              <span class="card-title">OBS / vMix RTMP Connection</span>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label class="input-label" for="inputRtmpUrl">RTMP Ingest Server URL (OBS)</label>
+            <div class="input-with-btn">
+              <input type="text" id="inputRtmpUrl" class="text-input" value="rtmp://localhost/live" readonly />
+              <button class="btn-copy" onclick="copyInput('inputRtmpUrl')">Copy</button>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label class="input-label" for="inputStreamKey">Stream Key</label>
+            <div class="input-with-btn">
+              <input type="text" id="inputStreamKey" class="text-input" value="stream" />
+              <button class="btn-copy" onclick="copyInput('inputStreamKey')">Copy</button>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label class="input-label" for="inputFlvUrl">Live Stream Playback URL (HTTP-FLV / HLS)</label>
+            <div class="input-with-btn">
+              <input type="text" id="inputFlvUrl" class="text-input" value="http://localhost:8080/live/stream.flv" />
+              <button class="btn-primary-sm" onclick="applyPlaybackUrl()">Connect</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card guide-card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="card-icon">🚀</span>
+              <span class="card-title">OBS Quick Setup</span>
+            </div>
+          </div>
+          <ol class="guide-steps">
+            <li>Open <strong>OBS Studio</strong> → <strong>Settings</strong> → <strong>Stream</strong></li>
+            <li>Service: <strong>Custom...</strong></li>
+            <li>Server: <code>rtmp://localhost/live</code></li>
+            <li>Stream Key: <code>stream</code></li>
+            <li>Click <strong>Start Streaming</strong> → Video plays live above in <strong>&lt;0.8s</strong>!</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 2: File Upload & Cloud Storage -->
+    <section class="main-grid">
       <!-- Upload Panel -->
-      <section class="card upload-card">
+      <div class="card upload-card">
         <div class="card-header">
           <span class="card-title">📁 File Upload</span>
           <span id="uploadStatusBadge" class="badge badge-ready">Ready</span>
@@ -91,10 +201,10 @@
 
         <!-- Upload Result -->
         <div id="uploadResult" class="upload-result hidden"></div>
-      </section>
+      </div>
 
       <!-- Files Panel -->
-      <aside class="card files-card">
+      <div class="card files-card">
         <div class="card-header">
           <span class="card-title">⚡ My Files</span>
           <button class="icon-btn-sm" onclick="clearAllFiles()" title="Clear list">🗑️</button>
@@ -106,10 +216,10 @@
             <p class="empty-sub">Completed files and their links will appear here.</p>
           </div>
         </div>
-      </aside>
-    </main>
+      </div>
+    </section>
   </div>
 
-  <script src="app.js?v=201" type="module"></script>
+  <script src="app.js?v=300" type="module"></script>
 </body>
 </html>
