@@ -1,23 +1,15 @@
-// File Transfer — Powered by Pixeldrain API
-// Uses official PUT /api/file/{name} binary stream upload method
-// API Key: 969ca829-a330-44af-a95a-473ae11cd1cb
+// File Transfer — Bulletproof Chunked Upload Engine
+// Slices files into 2.5 MB chunks to bypass Vercel limits & browser CORS preflight errors
 
-const API_KEY = '969ca829-a330-44af-a95a-473ae11cd1cb';
 const FILES_KEY = 'pixeltransfer_files';
-
-function getAuthHeader() {
-  return 'Basic ' + btoa(':' + API_KEY);
-}
 
 let uploadQueue = [];
 let isUploading = false;
 let cancelFlag  = false;
-let currentXHR  = null;
 
 window.onload = () => {
   renderFilesList();
   setupDropzone();
-  syncRemoteFiles();
 };
 
 // ─── Dropzone ─────────────────────────────────────────────────────────────────
@@ -56,77 +48,81 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Direct Pixeldrain FormData Upload (Unlimited File Size — 500MB+) ────────
+// ─── Chunked Upload (0 CORS Error & 0 Body Limits) ───────────────────────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    const apiKey = '969ca829-a330-44af-a95a-473ae11cd1cb';
-    const uploadUrl = `https://pixeldrain.com/api/file?auth=${apiKey}`;
+    const total = file.size;
+    const CHUNK_SIZE = 2.5 * 1024 * 1024; // 2.5 MB chunks (safe under Vercel 4.5MB limit)
+    const totalChunks = Math.ceil(total / CHUNK_SIZE);
+    const fileId = 'f_' + Date.now() + '_' + Math.random().toString(36).substring(7);
 
-    const result = await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      currentXHR = xhr;
+    let offset = 0;
+    let chunkIndex = 0;
+    let startTime = Date.now();
+    let lastOffset = 0;
+    let lastTime = startTime;
+    let resultData = null;
 
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('name', file.name);
+    while (offset < total) {
+      if (cancelFlag) throw new Error('Cancelled');
 
-      let startTime = Date.now();
-      let lastUploaded = 0;
+      const end = Math.min(offset + CHUNK_SIZE, total);
+      const slice = file.slice(offset, end);
+      const base64 = await readSliceAsBase64(slice);
 
-      xhr.upload.onprogress = (e) => {
-        if (cancelFlag) { xhr.abort(); return; }
-        if (e.lengthComputable) {
-          const pct = Math.round((e.loaded / e.total) * 100);
-          const now = Date.now();
-          const elapsed = (now - startTime) / 1000;
-          const bytesDone = e.loaded - lastUploaded;
-          const speedBps = elapsed > 0 ? bytesDone / elapsed : 0;
-          const remaining = e.total - e.loaded;
-          const etaSec = speedBps > 0 ? remaining / speedBps : 0;
+      const resp = await fetch('/api/upload-chunk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileId: fileId,
+          chunkIndex: chunkIndex,
+          totalChunks: totalChunks,
+          filename: file.name,
+          content: base64
+        })
+      });
 
-          setProgress(file.name, pct, e.loaded, e.total, speedBps, etaSec);
-          startTime = now;
-          lastUploaded = e.loaded;
-        }
-      };
+      if (!resp.ok) {
+        const errJson = await resp.json().catch(() => ({}));
+        throw new Error(errJson.message || `HTTP ${resp.status} on chunk ${chunkIndex + 1}/${totalChunks}`);
+      }
 
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try { resolve(JSON.parse(xhr.responseText)); }
-          catch (err) { reject(new Error('Invalid response format')); }
-        } else {
-          try {
-            const errJson = JSON.parse(xhr.responseText);
-            reject(new Error(errJson.message || `HTTP ${xhr.status}`));
-          } catch {
-            reject(new Error(`Server error HTTP ${xhr.status}`));
-          }
-        }
-      };
+      const json = await resp.json();
+      if (json.status !== 'chunk_received' && json.success) {
+        resultData = json;
+      }
 
-      xhr.onerror = () => reject(new Error('Network error during upload'));
-      xhr.onabort = () => reject(new Error('Upload cancelled'));
+      offset = end;
+      chunkIndex++;
 
-      xhr.open('POST', uploadUrl, true);
-      xhr.send(formData);
-    });
+      const now = Date.now();
+      const elapsed = (now - lastTime) / 1000;
+      const bytesDone = offset - lastOffset;
+      const speedBps = elapsed > 0 ? bytesDone / elapsed : 0;
+      const remaining = total - offset;
+      const etaSec = speedBps > 0 ? remaining / speedBps : 0;
 
-    if (!result.success || !result.id) {
-      throw new Error(result.message || 'Upload failed');
+      setProgress(file.name, Math.round((offset / total) * 100), offset, total, speedBps, etaSec);
+      lastOffset = offset;
+      lastTime = now;
     }
 
-    const fileId = result.id;
-    const viewUrl = `https://pixeldrain.com/u/${fileId}`;
-    const downloadUrl = `https://pixeldrain.com/api/file/${fileId}?download`;
+    if (!resultData || !resultData.id) {
+      throw new Error('Upload completed but no final file ID received');
+    }
+
+    const finalId = resultData.id;
+    const viewUrl = resultData.url || `https://pixeldrain.com/u/${finalId}`;
+    const downloadUrl = resultData.downloadUrl || `https://pixeldrain.com/api/file/${finalId}?download`;
 
     setBadge('success', '✅ Completed');
 
     saveFileRecord({
-      id: fileId,
+      id: finalId,
       name: file.name,
       url: viewUrl,
       downloadUrl: downloadUrl,
@@ -155,9 +151,17 @@ async function uploadFile(file) {
   setTimeout(() => setBadge('ready', 'Ready'), 4000);
 }
 
+function readSliceAsBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 function cancelUpload() {
   cancelFlag = true;
-  if (currentXHR) { currentXHR.abort(); currentXHR = null; }
   uploadQueue = [];
 }
 
@@ -191,31 +195,6 @@ async function deleteFile(fileId, btn) {
   }
 }
 
-// ─── GET /api/user/files Account Sync ─────────────────────────────────────────
-async function syncRemoteFiles() {
-  try {
-    const resp = await fetch('https://pixeldrain.com/api/user/files', {
-      headers: { 'Authorization': getAuthHeader() }
-    });
-    if (!resp.ok) return;
-    const data = await resp.json();
-    if (data.success && Array.isArray(data.files)) {
-      const records = data.files.map(f => ({
-        id: f.id,
-        name: f.name || ('file_' + f.id),
-        url: `https://pixeldrain.com/u/${f.id}`,
-        downloadUrl: `https://pixeldrain.com/api/file/${f.id}?download`,
-        size: f.size || 0,
-        date: f.date_upload || new Date().toISOString()
-      }));
-      localStorage.setItem(FILES_KEY, JSON.stringify(records));
-      renderFilesList();
-    }
-  } catch (e) {
-    console.warn('Pixeldrain remote sync skipped');
-  }
-}
-
 // ─── Local File Records ───────────────────────────────────────────────────────
 function getFileRecords() {
   try { return JSON.parse(localStorage.getItem(FILES_KEY)) || []; }
@@ -236,7 +215,7 @@ function removeFileRecord(fileId) {
 }
 
 function clearAllFiles() {
-  if (!confirm('Clear local history? (Files stay on Pixeldrain)')) return;
+  if (!confirm('Clear list?')) return;
   localStorage.removeItem(FILES_KEY);
   renderFilesList();
 }
@@ -247,7 +226,7 @@ function renderFilesList() {
   const records = getFileRecords();
 
   if (!records.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">⚡</div><p>No files uploaded yet.</p><p class="empty-sub">Completed files and their links will appear here.</p></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📂</div><p>No files uploaded yet.</p><p class="empty-sub">Completed files and their links will appear here.</p></div>`;
     return;
   }
 
@@ -264,7 +243,7 @@ function renderFilesList() {
         </div>
         <div class="file-actions">
           <a href="${r.url}" target="_blank" class="btn-sm btn-view">View</a>
-          <button class="btn-sm btn-delete" onclick="deleteFile('${r.id}', this)" title="Delete from Pixeldrain">🗑️</button>
+          <button class="btn-sm btn-delete" onclick="deleteFile('${r.id}', this)" title="Delete file">🗑️</button>
         </div>
       </div>`;
   }).join('');
