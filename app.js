@@ -98,7 +98,7 @@ async function uploadFile(file) {
       }
 
       const json = await resp.json();
-      if (json.status !== 'chunk_received' && json.success) {
+      if (json.id || (json.success && json.id)) {
         resultData = json;
       }
 

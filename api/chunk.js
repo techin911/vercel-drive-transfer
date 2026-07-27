@@ -63,24 +63,22 @@ export default async function handler(req, res) {
     finalStream.end();
     await new Promise((resolve) => finalStream.on('finish', resolve));
 
-    // Upload assembled file to Pixeldrain API server-to-server
-    const fileStats = fs.statSync(finalFilePath);
-    const readStream = fs.createReadStream(finalFilePath);
-    const pixeldrainUrl = `https://pixeldrain.com/api/file/${encodeURIComponent(filename)}`;
+    // Upload assembled file to Pixeldrain API
+    const targetFilename = filename || 'file_' + Date.now();
+    const pixeldrainUrl = `https://pixeldrain.com/api/file/${encodeURIComponent(targetFilename)}`;
     const authHeader = 'Basic ' + Buffer.from(':' + API_KEY).toString('base64');
+    const fileBuffer = fs.readFileSync(finalFilePath);
 
     const pdResp = await fetch(pixeldrainUrl, {
       method: 'PUT',
       headers: {
         'Authorization': authHeader,
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': fileStats.size.toString()
+        'Content-Type': 'application/octet-stream'
       },
-      body: readStream,
-      duplex: 'half'
+      body: fileBuffer
     });
 
-    const pdData = await pdResp.json().catch(() => ({}));
+    const pdData = await pdResp.json().catch((e) => ({ success: false, message: 'JSON parse error: ' + e.message }));
 
     // Cleanup temp files
     try {
@@ -88,7 +86,7 @@ export default async function handler(req, res) {
       fs.unlinkSync(finalFilePath);
     } catch (e) {}
 
-    if (pdResp.ok && pdData.success) {
+    if (pdResp.ok && pdData.success && pdData.id) {
       return res.status(200).json({
         success: true,
         id: pdData.id,
@@ -96,9 +94,9 @@ export default async function handler(req, res) {
         downloadUrl: `https://pixeldrain.com/api/file/${pdData.id}?download`
       });
     } else {
-      return res.status(pdResp.status || 500).json({
+      return res.status(400).json({
         success: false,
-        message: pdData.message || 'Pixeldrain transfer error'
+        message: pdData.message || pdData.value || `Pixeldrain HTTP ${pdResp.status}`
       });
     }
 
