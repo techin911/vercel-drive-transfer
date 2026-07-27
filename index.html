@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GoTransfer — Fast Unlimited File Storage</title>
-  <meta name="description" content="Ultrafast file uploader powered by Gofile. Unlimited file size, direct download links, zero setup.">
+  <meta name="description" content="Ultrafast file uploader. Unlimited file size, direct download links, zero setup.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
   <link rel="stylesheet" href="style.css">
@@ -29,16 +29,35 @@
         </div>
         <div class="brand-text">
           <h1>GoTransfer</h1>
-          <p>Unlimited File Uploads &bull; Powered by Gofile</p>
+          <p>Unlimited Fast File Uploads</p>
         </div>
       </div>
       <div class="header-right">
+        <button id="btnSettings" class="icon-btn" onclick="toggleSettings()" title="Account Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+          </svg>
+        </button>
         <div class="status-badge">
           <span class="pulse-dot"></span>
-          <span>Gofile Engine Active</span>
+          <span>Engine Active</span>
         </div>
       </div>
     </header>
+
+    <!-- Account Settings Panel -->
+    <div id="settingsPanel" class="settings-panel hidden">
+      <div class="settings-title">⚙️ Gofile Account Token (Save to your Account)</div>
+      <div class="settings-body">
+        <label class="input-label">Gofile API Token</label>
+        <input type="text" id="gofileTokenInput" class="text-input" placeholder="Paste your Gofile API Token (from gofile.io/myProfile)" />
+        <label class="input-label" style="margin-top:8px;">Folder ID (Optional)</label>
+        <input type="text" id="gofileFolderInput" class="text-input" placeholder="Folder ID (optional)" />
+        <p class="hint">Get your API Token at <a href="https://gofile.io/myProfile" target="_blank" class="link">gofile.io/myProfile →</a></p>
+        <button class="btn-primary" onclick="saveAccountSettings()">Save Account Token</button>
+      </div>
+    </div>
 
     <!-- Main Grid -->
     <main class="main-grid">
@@ -67,7 +86,7 @@
               </svg>
             </div>
             <h3 class="dz-title">Drag & Drop Files Here</h3>
-            <p class="dz-sub">Click to select &bull; Unlimited file size &bull; Instant link</p>
+            <p class="dz-sub">Click to select &bull; Unlimited file size &bull; Direct link</p>
             <div class="dz-btn">Choose Files</div>
           </div>
         </div>
@@ -103,7 +122,7 @@
           <div class="empty-state">
             <div class="empty-icon">📂</div>
             <p>No files uploaded yet.</p>
-            <p class="empty-sub">Uploaded files and their Gofile download links will appear here.</p>
+            <p class="empty-sub">Uploaded files and their download links will appear here.</p>
           </div>
         </div>
       </aside>

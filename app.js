@@ -1,6 +1,8 @@
-// GoTransfer — Pure Gofile.io Unlimited Cloud Uploader
-// Fast uploads, unlimited file size, zero configuration, instant download links, file delete history
+// GoTransfer — Ultrafast Cloud Uploader
+// Hardcoded Folder ID: 8ddcc1cc-3f35-400e-b77f-538059274ddf
+// All files uploaded from any device automatically land in YOUR Gofile Account folder!
 
+const DEFAULT_FOLDER_ID = '8ddcc1cc-3f35-400e-b77f-538059274ddf';
 const FILES_KEY = 'gotransfer_files';
 
 let uploadQueue = [];
@@ -33,6 +35,20 @@ function handleFileSelect(event) {
   event.target.value = '';
 }
 
+function toggleSettings() {
+  const panel = document.getElementById('settingsPanel');
+  if (panel) panel.classList.toggle('hidden');
+}
+
+function saveAccountSettings() {
+  const token = document.getElementById('gofileTokenInput').value.trim();
+  const folder = document.getElementById('gofileFolderInput').value.trim();
+  if (token) localStorage.setItem('gofile_token', token);
+  if (folder) localStorage.setItem('gofile_folder_id', folder);
+  showToast('✅ Saved settings!', 'success');
+  toggleSettings();
+}
+
 // ─── Queue ────────────────────────────────────────────────────────────────────
 function queueFiles(files) {
   for (const f of files) uploadQueue.push(f);
@@ -49,14 +65,14 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Gofile.io Upload Engine ──────────────────────────────────────────────────
+// ─── Upload to YOUR Gofile Folder ─────────────────────────────────────────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    // Step 1: Query Gofile API for active store server
+    // 1. Fetch active Gofile upload server
     const serverResp = await fetch('https://api.gofile.io/servers');
     const serverData = await serverResp.json().catch(() => ({}));
     
@@ -66,13 +82,17 @@ async function uploadFile(file) {
     }
 
     const uploadUrl = `https://${serverName}.gofile.io/contents/uploadfile`;
+    const userToken = localStorage.getItem('gofile_token') || '';
+    const folderId = localStorage.getItem('gofile_folder_id') || DEFAULT_FOLDER_ID;
 
-    // Step 2: Upload file via FormData with live progress, speed & ETA
+    // 2. Upload file via FormData directly to YOUR folderId
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       currentXHR = xhr;
       const formData = new FormData();
       formData.append('file', file);
+      if (folderId) formData.append('folderId', folderId);
+      if (userToken) formData.append('token', userToken);
 
       let startTime = Date.now();
       let lastUploaded = 0;
@@ -111,11 +131,11 @@ async function uploadFile(file) {
     });
 
     if (result.status !== 'ok') {
-      throw new Error(result.message || 'Upload failed on Gofile');
+      throw new Error(result.message || 'Upload failed');
     }
 
     const fileData = result.data || {};
-    const downloadPage = fileData.downloadPage || '#';
+    const downloadPage = fileData.downloadPage || `https://gofile.io/d/${folderId}`;
     const fileId = fileData.fileId || ('f_' + Date.now());
 
     setBadge('success', '✅ Completed');
@@ -129,8 +149,8 @@ async function uploadFile(file) {
     });
 
     showResult(
-      `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded successfully! ` +
-      `<a href="${downloadPage}" target="_blank" class="link">Get Download Link →</a>`,
+      `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded to your folder! ` +
+      `<a href="${downloadPage}" target="_blank" class="link">View Folder / Link →</a>`,
       'success'
     );
 
@@ -154,7 +174,7 @@ function cancelUpload() {
   uploadQueue = [];
 }
 
-// ─── File History ─────────────────────────────────────────────────────────────
+// ─── File Records (localStorage) ──────────────────────────────────────────────
 function getFileRecords() {
   try { return JSON.parse(localStorage.getItem(FILES_KEY)) || []; }
   catch { return []; }
@@ -184,7 +204,7 @@ function renderFilesList() {
   const records = getFileRecords();
 
   if (!records.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📂</div><p>No files uploaded yet.</p><p class="empty-sub">Uploaded files and their Gofile download links will appear here.</p></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📂</div><p>No files uploaded yet.</p><p class="empty-sub">Uploaded files and their download links will appear here.</p></div>`;
     return;
   }
 
@@ -200,7 +220,7 @@ function renderFilesList() {
           <div class="file-meta"><strong>${size}</strong> &bull; ${date}</div>
         </div>
         <div class="file-actions">
-          <a href="${r.url}" target="_blank" class="btn-sm btn-view">Download Link</a>
+          <a href="${r.url}" target="_blank" class="btn-sm btn-view">Link</a>
           <button class="btn-sm btn-delete" onclick="removeFileRecord('${r.id}')">🗑️</button>
         </div>
       </div>`;
