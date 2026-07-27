@@ -1,8 +1,6 @@
-// GoTransfer — Official Gofile.io API v2 Integration
-// Global Endpoint: https://upload.gofile.io/uploadfile
-// Hardcoded Destination Folder ID: 8ddcc1cc-3f35-400e-b77f-538059274ddf
+const DEFAULT_FOLDER_ID   = '8ddcc1cc-3f35-400e-b77f-538059274ddf';
+const DEFAULT_GOFILE_TOKEN = ''; // Hardcode your Gofile API token here to make it 100% permanent for all devices
 
-const DEFAULT_FOLDER_ID = '8ddcc1cc-3f35-400e-b77f-538059274ddf';
 const UPLOAD_ENDPOINT   = 'https://upload.gofile.io/uploadfile';
 const DELETE_ENDPOINT   = 'https://api.gofile.io/contents';
 const FILES_KEY         = 'gotransfer_files';
@@ -90,7 +88,7 @@ async function uploadFile(file) {
   hideResult();
 
   try {
-    const userToken = localStorage.getItem('gofile_token') || '';
+    const userToken = localStorage.getItem('gofile_token') || DEFAULT_GOFILE_TOKEN;
     const folderId = localStorage.getItem('gofile_folder_id') || DEFAULT_FOLDER_ID;
 
     // Build Multipart FormData according to Gofile API Specification
