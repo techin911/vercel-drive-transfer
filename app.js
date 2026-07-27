@@ -1,8 +1,6 @@
-// DriveTransfer — Direct Google Drive API Upload
-// Supports files up to 10 GB using resumable chunked uploads
-// No backend server — 100% browser to Google Drive
+// DriveTransfer — Ultra-Clean Google Drive Uploader
+// Direct browser upload with real-time speed, uploaded size, and completed files tracker
 
-// ─── Constants ────────────────────────────────────────────────────────────────
 const DEFAULT_CLIENT_ID = '218914001742-ek6ptsbn8voiuj8da5uqamda57kd9vb.apps.googleusercontent.com';
 const CLIENT_ID_KEY   = 'drivetransfer_client_id';
 const FILES_KEY       = 'drivetransfer_files';
@@ -22,9 +20,8 @@ let isUploading  = false;
 let cancelFlag   = false;
 let currentXHR   = null;
 
-// ─── GIS Init ─────────────────────────────────────────────────────────────────
+// ─── Init ─────────────────────────────────────────────────────────────────────
 window.onload = () => {
-  if (clientId) document.getElementById('clientIdInput').value = clientId;
   updateStatusDot();
   renderFilesList();
   setupDropzone();
@@ -34,7 +31,7 @@ window.onload = () => {
 function waitForGIS() {
   if (window.google && google.accounts) {
     gisReady = true;
-    if (clientId) initTokenClient();
+    initTokenClient();
   } else {
     setTimeout(waitForGIS, 300);
   }
@@ -46,7 +43,6 @@ function initTokenClient() {
     scope: SCOPES,
     callback: onTokenResponse
   });
-  showAuthBanner(!isAuthenticated());
 }
 
 function onTokenResponse(response) {
@@ -57,12 +53,19 @@ function onTokenResponse(response) {
   accessToken = response.access_token;
   tokenExpiry = Date.now() + (parseInt(response.expires_in) * 1000) - 60000;
   updateStatusDot();
-  showAuthBanner(false);
   showToast('✅ Connected to Google Drive!', 'success');
-  document.getElementById('btnSignIn').textContent = '✓ Connected';
-  document.getElementById('btnSignIn').style.background = 'rgba(0,230,118,0.15)';
-  document.getElementById('btnSignIn').style.color = '#00e676';
-  document.getElementById('btnSignIn').style.borderColor = 'rgba(0,230,118,0.4)';
+  const btn = document.getElementById('btnSignIn');
+  if (btn) {
+    btn.textContent = '✓ Connected';
+    btn.style.background = 'rgba(0,230,118,0.15)';
+    btn.style.color = '#00e676';
+    btn.style.borderColor = 'rgba(0,230,118,0.4)';
+  }
+
+  // If user dropped or selected files before auth, continue upload
+  if (uploadQueue.length && !isUploading) {
+    processQueue();
+  }
 }
 
 function isAuthenticated() {
@@ -73,7 +76,7 @@ async function ensureToken() {
   if (isAuthenticated()) return accessToken;
   return new Promise((resolve, reject) => {
     if (!tokenClient) {
-      reject(new Error('Please save your Client ID first (⚙️ Settings)'));
+      reject(new Error('Auth client not ready'));
       return;
     }
     const origCallback = tokenClient.callback;
@@ -89,36 +92,9 @@ async function ensureToken() {
   });
 }
 
-// ─── Settings ─────────────────────────────────────────────────────────────────
-function toggleSettings() {
-  document.getElementById('settingsPanel').classList.toggle('hidden');
-}
-
-function saveClientId() {
-  const val = document.getElementById('clientIdInput').value.trim();
-  if (!val || !val.includes('.apps.googleusercontent.com')) {
-    showToast('❌ Paste a valid OAuth Client ID (ends with .apps.googleusercontent.com)', 'error');
-    return;
-  }
-  clientId = val;
-  localStorage.setItem(CLIENT_ID_KEY, clientId);
-  document.getElementById('settingsPanel').classList.add('hidden');
-  if (gisReady) initTokenClient();
-  showToast('✅ Client ID saved! Click "Connect Google Drive"', 'success');
-}
-
 function signIn() {
-  if (!clientId) {
-    document.getElementById('settingsPanel').classList.remove('hidden');
-    showToast('⚠️ Paste your OAuth Client ID first', 'error');
-    return;
-  }
-  if (!tokenClient) {
-    initTokenClient();
-    setTimeout(() => tokenClient && tokenClient.requestAccessToken(), 500);
-    return;
-  }
-  tokenClient.requestAccessToken();
+  if (!tokenClient && gisReady) initTokenClient();
+  if (tokenClient) tokenClient.requestAccessToken();
 }
 
 function updateStatusDot() {
@@ -126,17 +102,10 @@ function updateStatusDot() {
   if (isAuthenticated()) {
     dot.className = 'status-dot connected';
     dot.title = 'Connected to Google Drive';
-  } else if (clientId) {
-    dot.className = 'status-dot warning';
-    dot.title = 'Client ID set — click Connect';
   } else {
     dot.className = 'status-dot';
-    dot.title = 'Not configured';
+    dot.title = 'Click Connect Google Drive';
   }
-}
-
-function showAuthBanner(show) {
-  document.getElementById('authBanner').classList.toggle('hidden', !show);
 }
 
 // ─── Dropzone ─────────────────────────────────────────────────────────────────
@@ -149,8 +118,17 @@ function setupDropzone() {
     dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.remove('drag-over'); })
   );
   dz.addEventListener('drop', ev => {
+    ev.preventDefault();
     if (ev.dataTransfer.files.length) queueFiles(ev.dataTransfer.files);
   });
+}
+
+function onDropzoneClick() {
+  if (!isAuthenticated()) {
+    signIn();
+    return;
+  }
+  document.getElementById('fileInput').click();
 }
 
 function handleFileSelect(event) {
@@ -158,7 +136,7 @@ function handleFileSelect(event) {
   event.target.value = '';
 }
 
-// ─── Queue ────────────────────────────────────────────────────────────────────
+// ─── Queue & Upload ───────────────────────────────────────────────────────────
 function queueFiles(files) {
   for (const f of files) uploadQueue.push(f);
   if (!isUploading) processQueue();
@@ -174,7 +152,6 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Upload ───────────────────────────────────────────────────────────────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
@@ -183,7 +160,7 @@ async function uploadFile(file) {
   try {
     const token = await ensureToken();
 
-    // Step 1: Create resumable upload session
+    // 1. Create resumable upload session
     const metadata = {
       name: file.name,
       mimeType: file.type || 'application/octet-stream',
@@ -202,14 +179,14 @@ async function uploadFile(file) {
     });
 
     if (!initResp.ok) {
-      const err = await initResp.json();
+      const err = await initResp.json().catch(() => ({}));
       throw new Error(err.error?.message || 'Failed to start upload session');
     }
 
     const uploadUrl = initResp.headers.get('Location');
     if (!uploadUrl) throw new Error('No upload URL returned from Google Drive');
 
-    // Step 2: Upload chunks
+    // 2. Upload chunks with live size tracking
     const fileData = await uploadChunks(file, uploadUrl);
 
     setBadge('success', '✅ Saved to Drive');
@@ -223,8 +200,8 @@ async function uploadFile(file) {
     });
 
     showResult(
-      `✅ <strong>${escHtml(file.name)}</strong> saved to Google Drive! ` +
-      `<a href="https://drive.google.com/file/d/${fileData.id}/view" target="_blank" class="link">Open in Drive →</a>`,
+      `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) saved to Google Drive! ` +
+      `<a href="https://drive.google.com/file/d/${fileData.id}/view" target="_blank" class="link">Open File →</a>`,
       'success'
     );
   } catch (err) {
@@ -238,7 +215,7 @@ async function uploadFile(file) {
     }
   }
 
-  setTimeout(() => setBadge('ready', 'Ready'), 5000);
+  setTimeout(() => setBadge('ready', 'Ready'), 4000);
 }
 
 async function uploadChunks(file, uploadUrl) {
@@ -267,16 +244,15 @@ async function uploadChunks(file, uploadUrl) {
         if (xhr.status === 200 || xhr.status === 201) {
           resolve({ done: true, data: JSON.parse(xhr.responseText) });
         } else if (xhr.status === 308) {
-          // Chunk received, continue
           const range = xhr.getResponseHeader('Range');
           const received = range ? parseInt(range.split('-')[1]) + 1 : end;
           resolve({ done: false, received });
         } else {
-          reject(new Error(`Upload error: HTTP ${xhr.status}`));
+          reject(new Error(`HTTP ${xhr.status}`));
         }
       };
 
-      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.onerror = () => reject(new Error('Network error'));
       xhr.onabort = () => reject(new Error('Cancelled'));
 
       xhr.send(chunk);
@@ -289,7 +265,6 @@ async function uploadChunks(file, uploadUrl) {
 
     offset = result.received || end;
 
-    // Calculate speed and ETA
     const now = Date.now();
     const elapsed = (now - lastTime) / 1000;
     const bytesDone = offset - lastOffset;
@@ -302,7 +277,7 @@ async function uploadChunks(file, uploadUrl) {
     lastTime = now;
   }
 
-  throw new Error('Upload completed but no file data returned');
+  throw new Error('Upload completed with no response payload');
 }
 
 function cancelUpload() {
@@ -313,7 +288,7 @@ function cancelUpload() {
 
 // ─── Delete ───────────────────────────────────────────────────────────────────
 async function deleteFile(fileId, btn) {
-  if (!confirm('Move this file to Google Drive Trash?')) return;
+  if (!confirm('Delete this file from Google Drive?')) return;
   btn.classList.add('deleting');
   btn.textContent = '...';
 
@@ -326,7 +301,7 @@ async function deleteFile(fileId, btn) {
 
     if (resp.ok || resp.status === 204) {
       removeFileRecord(fileId);
-      showToast('🗑️ File moved to Drive Trash.', 'success');
+      showToast('🗑️ File deleted from Drive.', 'success');
     } else {
       const err = await resp.json().catch(() => ({}));
       throw new Error(err.error?.message || `HTTP ${resp.status}`);
@@ -338,7 +313,7 @@ async function deleteFile(fileId, btn) {
   }
 }
 
-// ─── File Records (localStorage) ──────────────────────────────────────────────
+// ─── Local File Records ───────────────────────────────────────────────────────
 function getFileRecords() {
   try { return JSON.parse(localStorage.getItem(FILES_KEY)) || []; }
   catch { return []; }
@@ -354,17 +329,17 @@ function removeFileRecord(fileId) {
   renderFilesList();
 }
 function clearAllFiles() {
-  if (!confirm('Clear file history? (Files stay in Google Drive)')) return;
+  if (!confirm('Clear list? (Files stay in Google Drive)')) return;
   localStorage.removeItem(FILES_KEY);
   renderFilesList();
 }
 
-// ─── Render Files ─────────────────────────────────────────────────────────────
+// ─── UI Rendering ─────────────────────────────────────────────────────────────
 function renderFilesList() {
   const list = document.getElementById('filesList');
   const records = getFileRecords();
   if (!records.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📂</div><p>No files yet.</p><p class="empty-sub">Upload a file to see it here.</p></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📂</div><p>No files uploaded yet.</p><p class="empty-sub">Completed files and their size will appear here.</p></div>`;
     return;
   }
   list.innerHTML = records.map(r => {
@@ -376,7 +351,7 @@ function renderFilesList() {
         <div class="file-icon">${icon}</div>
         <div class="file-info">
           <div class="file-name" title="${escHtml(r.name)}">${escHtml(r.name)}</div>
-          <div class="file-meta">${size} &bull; ${date}</div>
+          <div class="file-meta"><strong>${size}</strong> &bull; ${date}</div>
         </div>
         <div class="file-actions">
           <a href="${r.url}" target="_blank" class="btn-sm btn-view">View</a>
@@ -386,7 +361,6 @@ function renderFilesList() {
   }).join('');
 }
 
-// ─── UI Helpers ───────────────────────────────────────────────────────────────
 function showProgress(name, total) {
   document.getElementById('progressSection').classList.remove('hidden');
   document.getElementById('progressFileName').textContent = name;
@@ -434,14 +408,6 @@ function showToast(msg, type) {
   setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity 0.3s'; setTimeout(()=>t.remove(),300); }, 3000);
 }
 
-function toggleGuide() {
-  const body = document.getElementById('guideBody');
-  const icon = document.getElementById('guideToggleIcon');
-  body.classList.toggle('hidden');
-  icon.textContent = body.classList.contains('hidden') ? '▼' : '▲';
-}
-
-// ─── Utils ────────────────────────────────────────────────────────────────────
 function formatBytes(b) {
   if (!b || b === 0) return '0 B';
   const units = ['B','KB','MB','GB','TB'];

@@ -3,12 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DriveTransfer — Upload Files Directly to Google Drive</title>
-  <meta name="description" content="Upload files up to 10 GB directly from your browser to Google Drive. Free, fast, secure.">
+  <title>DriveTransfer — Upload Files to Google Drive</title>
+  <meta name="description" content="Fast, simple file uploader to Google Drive with progress and file size tracker.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
   <link rel="stylesheet" href="style.css">
-  <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -31,7 +30,7 @@
         </div>
         <div class="brand-text">
           <h1>DriveTransfer</h1>
-          <p>Upload up to 10 GB → Google Drive</p>
+          <p>Upload Files → Google Drive</p>
         </div>
       </div>
       <div class="header-right">
@@ -39,49 +38,21 @@
           <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z"/></svg>
           Connect Google Drive
         </button>
-        <button id="btnSettings" class="icon-btn" onclick="toggleSettings()" title="Settings">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
-          </svg>
-        </button>
-        <div id="statusDot" class="status-dot" title="Not connected"></div>
+        <div id="statusDot" class="status-dot" title="Status"></div>
       </div>
     </header>
-
-    <!-- Settings Panel -->
-    <div id="settingsPanel" class="settings-panel hidden">
-      <div class="settings-title">⚙️ Google OAuth Configuration</div>
-      <div class="settings-body">
-        <label class="input-label">Google OAuth Client ID</label>
-        <input type="text" id="clientIdInput" class="text-input" placeholder="xxxx.apps.googleusercontent.com" />
-        <p class="hint">
-          Get it from <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="link">Google Cloud Console</a> → Create OAuth 2.0 Client ID (Web application).<br>
-          Add <strong>https://vercel-drive-transfer.vercel.app</strong> as Authorized JavaScript Origin.
-        </p>
-        <button class="btn-primary" onclick="saveClientId()">Save Client ID</button>
-      </div>
-    </div>
-
-    <!-- Auth Required Banner -->
-    <div id="authBanner" class="auth-banner hidden">
-      <div class="auth-banner-inner">
-        <span>🔒 Connect your Google account to start uploading files up to 10 GB</span>
-        <button class="btn-primary-sm" onclick="signIn()">Connect Google Drive</button>
-      </div>
-    </div>
 
     <!-- Main Grid -->
     <main class="main-grid">
       <!-- Upload Panel -->
       <section class="card upload-card">
         <div class="card-header">
-          <span class="card-title">📁 Upload to Google Drive</span>
+          <span class="card-title">📁 File Upload</span>
           <span id="uploadStatusBadge" class="badge badge-ready">Ready</span>
         </div>
 
         <!-- Dropzone -->
-        <div id="dropzone" class="dropzone" onclick="document.getElementById('fileInput').click()">
+        <div id="dropzone" class="dropzone" onclick="onDropzoneClick()">
           <input type="file" id="fileInput" multiple style="display:none" onchange="handleFileSelect(event)">
           <div class="dropzone-inner">
             <div class="dropzone-icon" id="dzIcon">
@@ -98,12 +69,12 @@
               </svg>
             </div>
             <h3 class="dz-title">Drag & Drop Files Here</h3>
-            <p class="dz-sub">Any file type &bull; Up to <strong>10 GB</strong> per file</p>
+            <p class="dz-sub">Click to select file &bull; Any size supported</p>
             <div class="dz-btn">Choose Files</div>
           </div>
         </div>
 
-        <!-- Progress Section (shown during upload) -->
+        <!-- Progress Section -->
         <div id="progressSection" class="progress-section hidden">
           <div class="progress-info">
             <span id="progressFileName" class="progress-name">file.zip</span>
@@ -127,60 +98,18 @@
       <!-- Files Panel -->
       <aside class="card files-card">
         <div class="card-header">
-          <span class="card-title">☁️ My Drive Files</span>
-          <button class="icon-btn-sm" onclick="clearAllFiles()" title="Clear records">🗑️</button>
+          <span class="card-title">☁️ Uploaded Files</span>
+          <button class="icon-btn-sm" onclick="clearAllFiles()" title="Clear history">🗑️</button>
         </div>
         <div id="filesList" class="files-list">
           <div class="empty-state">
             <div class="empty-icon">📂</div>
-            <p>No files yet.</p>
-            <p class="empty-sub">Upload a file to see it here.</p>
+            <p>No files uploaded yet.</p>
+            <p class="empty-sub">Completed files and their size will appear here.</p>
           </div>
         </div>
       </aside>
     </main>
-
-    <!-- Setup Guide -->
-    <div class="guide-card card">
-      <div class="guide-header" onclick="toggleGuide()">
-        <span>📋 Setup Guide — Enable Google Drive (2 min)</span>
-        <span id="guideToggleIcon">▼</span>
-      </div>
-      <div id="guideBody" class="guide-body hidden">
-        <div class="steps">
-          <div class="step">
-            <div class="step-num">1</div>
-            <div class="step-content">
-              Go to <a href="https://console.cloud.google.com" target="_blank" class="link">console.cloud.google.com</a> → <em>New Project</em> → name it <em>DriveTransfer</em>
-            </div>
-          </div>
-          <div class="step">
-            <div class="step-num">2</div>
-            <div class="step-content">
-              Go to <strong>APIs & Services → Enable APIs</strong> → search <em>Google Drive API</em> → <strong>Enable</strong>
-            </div>
-          </div>
-          <div class="step">
-            <div class="step-num">3</div>
-            <div class="step-content">
-              Go to <strong>APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID</strong><br>
-              Type: <em>Web application</em><br>
-              Add Authorized JavaScript Origin: <code class="inline-code">https://vercel-drive-transfer.vercel.app</code>
-            </div>
-          </div>
-          <div class="step">
-            <div class="step-num">4</div>
-            <div class="step-content">
-              Copy your <strong>Client ID</strong> → click <strong>⚙️ Settings</strong> above → paste → Save<br>
-              Then click <strong>Connect Google Drive</strong> → sign in → you're ready!
-            </div>
-          </div>
-        </div>
-        <div class="guide-note">
-          ✅ Files go directly from your browser to Google Drive using the official API. No file size limit beyond Drive's own 5 TB limit. No third-party server involved.
-        </div>
-      </div>
-    </div>
   </div>
 
   <script src="app.js"></script>
