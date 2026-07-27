@@ -63,7 +63,9 @@ async function onTokenResponse(response) {
   await fetchUserProfile();
   
   updateStatusDot();
-  showToast('✅ Connected as ' + (userProfile?.name || userProfile?.email || 'Google User'), 'success');
+  const rawEmail = userProfile?.email || '';
+  const maskedEmail = rawEmail ? maskEmail(rawEmail) : '';
+  showToast('✅ Connected as ' + (userProfile?.name || maskedEmail || 'Google User'), 'success');
 
   // If user dropped or selected files before auth, continue upload
   if (uploadQueue.length && !isUploading) {
@@ -85,16 +87,27 @@ async function fetchUserProfile() {
   }
 }
 
+function maskEmail(email) {
+  if (!email || !email.includes('@')) return email || '';
+  const [name, domain] = email.split('@');
+  if (name.length <= 4) return name[0] + '***@' + domain;
+  return name.substring(0, 3) + '***' + name.substring(name.length - 2) + '@' + domain;
+}
+
 function updateUserHeader() {
   const btn = document.getElementById('btnSignIn');
   if (!btn) return;
   
-  const displayName = userProfile?.name || userProfile?.email || 'Connected User';
+  const rawEmail = userProfile?.email || '';
+  const maskedEmail = rawEmail ? maskEmail(rawEmail) : '';
+  const displayName = userProfile?.name || maskedEmail || 'Connected User';
+  const label = maskedEmail ? `${displayName} (${maskedEmail})` : displayName;
+
   const avatar = userProfile?.picture 
-    ? `<img src="${userProfile.picture}" style="width:20px;height:20px;border-radius:50%;margin-right:6px;" />`
+    ? `<img src="${userProfile.picture}" style="width:20px;height:20px;border-radius:50%;margin-right:6px;vertical-align:middle;" />`
     : '👤 ';
     
-  btn.innerHTML = `${avatar} <span>${escHtml(displayName)}</span>`;
+  btn.innerHTML = `${avatar} <span>${escHtml(label)}</span>`;
   btn.style.background = 'rgba(0,230,118,0.15)';
   btn.style.color = '#00e676';
   btn.style.borderColor = 'rgba(0,230,118,0.4)';
