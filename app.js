@@ -1,5 +1,5 @@
-// File Transfer — Bulletproof Chunked Upload Engine
-// Slices files into 2.5 MB chunks to bypass Vercel limits & browser CORS preflight errors
+// File Transfer — Powered by Vercel Blob Storage + Pixeldrain Cloud Transfer
+import { upload } from 'https://esm.sh/@vercel/blob/client';
 
 const FILES_KEY = 'pixeltransfer_files';
 
@@ -12,9 +12,15 @@ window.onload = () => {
   setupDropzone();
 };
 
+window.handleFileSelect = handleFileSelect;
+window.cancelUpload = cancelUpload;
+window.deleteFile = deleteFile;
+window.clearAllFiles = clearAllFiles;
+
 // ─── Dropzone ─────────────────────────────────────────────────────────────────
 function setupDropzone() {
   const dz = document.getElementById('dropzone');
+  if (!dz) return;
   ['dragenter','dragover'].forEach(e =>
     dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('drag-over'); })
   );
@@ -48,92 +54,58 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Chunked Upload (0 CORS Error & 0 Body Limits) ───────────────────────────
+// ─── Unlimited Vercel Blob Storage Upload ─────────────────────────────────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    const total = file.size;
-    const CHUNK_SIZE = 2.5 * 1024 * 1024; // 2.5 MB chunks (safe under Vercel 4.5MB limit)
-    const totalChunks = Math.ceil(total / CHUNK_SIZE);
-    const fileId = 'f_' + Date.now() + '_' + Math.random().toString(36).substring(7);
-
-    let offset = 0;
-    let chunkIndex = 0;
     let startTime = Date.now();
-    let lastOffset = 0;
-    let lastTime = startTime;
-    let resultData = null;
+    let lastLoaded = 0;
 
-    while (offset < total) {
-      if (cancelFlag) throw new Error('Cancelled');
+    const newBlob = await upload(file.name, file, {
+      access: 'public',
+      handleUploadUrl: '/api/upload-blob',
+      onUploadProgress: (progressEvent) => {
+        if (cancelFlag) throw new Error('Cancelled');
+        const loaded = progressEvent.loaded;
+        const total = progressEvent.total || file.size;
+        const pct = Math.round((loaded / total) * 100);
 
-      const end = Math.min(offset + CHUNK_SIZE, total);
-      const slice = file.slice(offset, end);
-      const base64 = await readSliceAsBase64(slice);
+        const now = Date.now();
+        const elapsed = (now - startTime) / 1000;
+        const bytesDone = loaded - lastLoaded;
+        const speedBps = elapsed > 0 ? bytesDone / elapsed : 0;
+        const remaining = total - loaded;
+        const etaSec = speedBps > 0 ? remaining / speedBps : 0;
 
-      const resp = await fetch('/api/upload-chunk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileId: fileId,
-          chunkIndex: chunkIndex,
-          totalChunks: totalChunks,
-          filename: file.name,
-          content: base64
-        })
-      });
+        setProgress(file.name, pct, loaded, total, speedBps, etaSec);
+        startTime = now;
+        lastLoaded = loaded;
+      },
+    });
 
-      if (!resp.ok) {
-        const errJson = await resp.json().catch(() => ({}));
-        throw new Error(errJson.message || `HTTP ${resp.status} on chunk ${chunkIndex + 1}/${totalChunks}`);
-      }
-
-      const json = await resp.json();
-      if (json.status !== 'chunk_received' && json.success) {
-        resultData = json;
-      }
-
-      offset = end;
-      chunkIndex++;
-
-      const now = Date.now();
-      const elapsed = (now - lastTime) / 1000;
-      const bytesDone = offset - lastOffset;
-      const speedBps = elapsed > 0 ? bytesDone / elapsed : 0;
-      const remaining = total - offset;
-      const etaSec = speedBps > 0 ? remaining / speedBps : 0;
-
-      setProgress(file.name, Math.round((offset / total) * 100), offset, total, speedBps, etaSec);
-      lastOffset = offset;
-      lastTime = now;
+    if (!newBlob || !newBlob.url) {
+      throw new Error('Vercel Blob upload failed');
     }
-
-    if (!resultData || !resultData.id) {
-      throw new Error('Upload completed but no final file ID received');
-    }
-
-    const finalId = resultData.id;
-    const viewUrl = resultData.url || `https://pixeldrain.com/u/${finalId}`;
-    const downloadUrl = resultData.downloadUrl || `https://pixeldrain.com/api/file/${finalId}?download`;
 
     setBadge('success', '✅ Completed');
 
-    saveFileRecord({
-      id: finalId,
+    const record = {
+      id: newBlob.url.split('/').pop(),
       name: file.name,
-      url: viewUrl,
-      downloadUrl: downloadUrl,
+      url: newBlob.url,
+      downloadUrl: newBlob.downloadUrl || newBlob.url,
       size: file.size,
       date: new Date().toISOString()
-    });
+    };
+
+    saveFileRecord(record);
 
     showResult(
       `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded successfully! ` +
-      `<a href="${viewUrl}" target="_blank" class="link">View File →</a> &nbsp;|&nbsp; ` +
-      `<a href="${downloadUrl}" target="_blank" class="link">Direct Download ⬇️</a>`,
+      `<a href="${newBlob.url}" target="_blank" class="link">View / Download File →</a>`,
       'success'
     );
 
@@ -151,48 +123,16 @@ async function uploadFile(file) {
   setTimeout(() => setBadge('ready', 'Ready'), 4000);
 }
 
-function readSliceAsBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(',')[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
 function cancelUpload() {
   cancelFlag = true;
   uploadQueue = [];
 }
 
-// ─── Delete File via Vercel Proxy ──────────────────────────────────────────────
+// ─── Delete File ──────────────────────────────────────────────────────────────
 async function deleteFile(fileId, btn) {
-  if (!confirm('Delete this file permanently?')) return;
-  if (btn) {
-    btn.classList.add('deleting');
-    btn.textContent = '...';
-  }
-
-  try {
-    const resp = await fetch(`/api/delete?fileId=${encodeURIComponent(fileId)}`, {
-      method: 'DELETE'
-    });
-
-    const resJson = await resp.json().catch(() => ({}));
-
-    if (resp.ok && resJson.success) {
-      removeFileRecord(fileId);
-      showToast('🗑️ File deleted!', 'success');
-    } else {
-      throw new Error(resJson.value || resJson.message || `HTTP ${resp.status}`);
-    }
-  } catch (err) {
-    showToast('❌ Delete failed: ' + err.message, 'error');
-    if (btn) {
-      btn.classList.remove('deleting');
-      btn.textContent = '🗑️';
-    }
-  }
+  if (!confirm('Delete this file from list?')) return;
+  removeFileRecord(fileId);
+  showToast('🗑️ File removed from list!', 'success');
 }
 
 // ─── Local File Records ───────────────────────────────────────────────────────
@@ -223,6 +163,7 @@ function clearAllFiles() {
 // ─── UI Rendering ─────────────────────────────────────────────────────────────
 function renderFilesList() {
   const list = document.getElementById('filesList');
+  if (!list) return;
   const records = getFileRecords();
 
   if (!records.length) {
@@ -271,18 +212,25 @@ function setProgress(name, pct, uploaded, total, speedBps, etaSec) {
 
 function setBadge(type, text) {
   const b = document.getElementById('uploadStatusBadge');
-  b.className = 'badge badge-' + type;
-  b.textContent = text;
+  if (b) {
+    b.className = 'badge badge-' + type;
+    b.textContent = text;
+  }
 }
 
 function showResult(html, type) {
   const el = document.getElementById('uploadResult');
-  el.className = 'upload-result ' + type;
-  el.innerHTML = html;
-  el.classList.remove('hidden');
+  if (el) {
+    el.className = 'upload-result ' + type;
+    el.innerHTML = html;
+    el.classList.remove('hidden');
+  }
 }
 
-function hideResult() { document.getElementById('uploadResult').classList.add('hidden'); }
+function hideResult() {
+  const el = document.getElementById('uploadResult');
+  if (el) el.classList.add('hidden');
+}
 
 function showToast(msg, type) {
   const t = document.createElement('div');
