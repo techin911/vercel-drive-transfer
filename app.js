@@ -56,18 +56,23 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Direct Upload to Vercel Temp Storage + Hidden Pixeldrain Transfer ─────
+// ─── Direct Pixeldrain FormData Upload (Unlimited File Size — 500MB+) ────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    const uploadUrl = '/api/temp-upload';
+    const apiKey = '969ca829-a330-44af-a95a-473ae11cd1cb';
+    const uploadUrl = `https://pixeldrain.com/api/file?auth=${apiKey}`;
 
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       currentXHR = xhr;
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('name', file.name);
 
       let startTime = Date.now();
       let lastUploaded = 0;
@@ -103,22 +108,20 @@ async function uploadFile(file) {
         }
       };
 
-      xhr.onerror = () => reject(new Error('Network connection error'));
+      xhr.onerror = () => reject(new Error('Network error during upload'));
       xhr.onabort = () => reject(new Error('Upload cancelled'));
 
       xhr.open('POST', uploadUrl, true);
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-      xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
-      xhr.send(file);
+      xhr.send(formData);
     });
 
     if (!result.success || !result.id) {
-      throw new Error(result.message || 'Transfer failed');
+      throw new Error(result.message || 'Upload failed');
     }
 
     const fileId = result.id;
-    const viewUrl = result.url || `https://pixeldrain.com/u/${fileId}`;
-    const downloadUrl = result.downloadUrl || `https://pixeldrain.com/api/file/${fileId}?download`;
+    const viewUrl = `https://pixeldrain.com/u/${fileId}`;
+    const downloadUrl = `https://pixeldrain.com/api/file/${fileId}?download`;
 
     setBadge('success', '✅ Completed');
 
