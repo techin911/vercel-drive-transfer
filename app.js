@@ -78,21 +78,8 @@ async function uploadFile(file) {
     let fileData = {};
 
     if (mode === 'webhook') {
-      // Base64 Webhook Upload
-      const base64 = await readFileAsBase64(file, (pct) => {
-        setProgress(file.name, Math.round(pct * 0.5), file.size * (pct * 0.5), file.size, 0, 0);
-      });
-      
-      setProgress(file.name, 75, file.size * 0.75, file.size, 0, 0);
-      
-      const gasResp = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: file.name, content: base64 })
-      });
-      
-      fileData = await gasResp.json().catch(() => ({}));
-      setProgress(file.name, 100, file.size, file.size, 0, 0);
+      // Chunked Webhook Upload to prevent browser memory crashes on large files (200MB+)
+      fileData = await uploadWebhookInChunks(file, uploadUrl);
     } else {
       // Direct Resumable Chunked Upload
       fileData = await uploadChunks(file, uploadUrl);
@@ -127,15 +114,71 @@ async function uploadFile(file) {
   setTimeout(() => setBadge('ready', 'Ready'), 4000);
 }
 
-function readFileAsBase64(file, onProgress) {
+async function uploadWebhookInChunks(file, uploadUrl) {
+  const total = file.size;
+  const CHUNK_BYTES = 4 * 1024 * 1024; // 4 MB slices
+  let offset = 0;
+  let chunkIndex = 0;
+  const totalChunks = Math.ceil(total / CHUNK_BYTES);
+  let fileId = null;
+  let startTime = Date.now();
+  let lastOffset = 0;
+  let lastTime = startTime;
+  let resultData = {};
+
+  while (offset < total) {
+    if (cancelFlag) throw new Error('Cancelled');
+
+    const end = Math.min(offset + CHUNK_BYTES, total);
+    const slice = file.slice(offset, end);
+    const base64 = await readSliceAsBase64(slice);
+
+    const payload = {
+      action: chunkIndex === 0 ? 'init_chunk' : 'append_chunk',
+      name: file.name,
+      content: base64,
+      chunkIndex: chunkIndex,
+      totalChunks: totalChunks,
+      fileId: fileId
+    };
+
+    const resp = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status} on chunk ${chunkIndex + 1}/${totalChunks}`);
+    }
+
+    resultData = await resp.json().catch(() => ({}));
+    if (resultData.fileId) fileId = resultData.fileId;
+
+    offset = end;
+    chunkIndex++;
+
+    const now = Date.now();
+    const elapsed = (now - lastTime) / 1000;
+    const bytesDone = offset - lastOffset;
+    const speedBps = elapsed > 0 ? bytesDone / elapsed : 0;
+    const remaining = total - offset;
+    const etaSec = speedBps > 0 ? remaining / speedBps : 0;
+
+    setProgress(file.name, Math.round((offset / total) * 100), offset, total, speedBps, etaSec);
+    lastOffset = offset;
+    lastTime = now;
+  }
+
+  return resultData;
+}
+
+function readSliceAsBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
-    };
     reader.onload = () => resolve(reader.result.split(',')[1]);
     reader.onerror = reject;
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
   });
 }
 
