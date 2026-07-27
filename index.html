@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LiveStream Studio — Ultra-Low Latency RTMP Broadcast</title>
-  <meta name="description" content="Watch & manage your live RTMP broadcasts with sub-second zero-lag HTTP-FLV player.">
+  <title>VercelStream Studio — Live Broadcast & Control Center</title>
+  <meta name="description" content="100% Vercel hosted live stream control center with user dashboard, admin panel, and zero-lag video player.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
   <link rel="stylesheet" href="style.css">
-  <!-- Sub-Second Low Latency Player (mpegts.js / hls.js) -->
-  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js"></script>
+  <!-- Video Player Engines (HLS & FLV) -->
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js"></script>
 </head>
 <body>
   <div class="bg-orbs">
@@ -30,11 +30,15 @@
           </svg>
         </div>
         <div class="brand-text">
-          <h1>LiveStream Studio</h1>
-          <p>Zero-Lag RTMP Broadcast Engine</p>
+          <h1>VercelStream Studio</h1>
+          <p>100% Serverless Live Broadcast Control Center</p>
         </div>
       </div>
       <div class="header-right">
+        <div class="nav-tabs">
+          <button id="tabUserBtn" class="nav-tab active" onclick="switchTab('user')">📺 Viewer Studio</button>
+          <button id="tabAdminBtn" class="nav-tab" onclick="switchTab('admin')">⚙️ Admin Control Panel</button>
+        </div>
         <div id="liveBadge" class="status-badge status-offline">
           <span id="liveDot" class="pulse-dot"></span>
           <span id="liveBadgeText">OFFLINE</span>
@@ -42,26 +46,40 @@
       </div>
     </header>
 
-    <!-- Main Studio Layout -->
-    <main class="studio-grid">
-      <!-- Left Column: Video Player -->
+    <!-- Broadcast Announcement Banner -->
+    <div id="announcementBanner" class="announcement-banner hidden">
+      <span class="announce-icon">📢</span>
+      <span id="announceText" class="announce-text">Welcome to VercelStream Live!</span>
+    </div>
+
+    <!-- ==================== TAB 1: USER DASHBOARD ==================== -->
+    <main id="userDashboard" class="studio-grid">
+      <!-- Left Column: Live Video Player -->
       <section class="card player-card">
         <div class="card-header">
-          <span class="card-title">📺 Live Video Feed</span>
+          <div class="title-with-channel">
+            <span class="card-title">📺 Live Stream Feed</span>
+            <select id="channelSelect" class="select-input" onchange="changeChannel(this.value)">
+              <option value="ch1">Channel 1 (Primary)</option>
+              <option value="ch2">Channel 2 (Backup)</option>
+              <option value="ch3">Channel 3 (Event Special)</option>
+            </select>
+          </div>
           <div class="player-controls">
-            <button class="btn-sm btn-action" onclick="reloadPlayer()" title="Refresh Feed">🔄 Reload</button>
-            <button class="btn-sm btn-action" onclick="toggleFullscreen()" title="Fullscreen">⛶ Fullscreen</button>
+            <button class="btn-sm btn-action" onclick="reloadPlayer()">🔄 Reload</button>
+            <button class="btn-sm btn-action" onclick="toggleFullscreen()">⛶ Fullscreen</button>
           </div>
         </div>
 
-        <!-- Video Container -->
+        <!-- Video Wrapper -->
         <div class="video-wrapper">
           <video id="videoPlayer" controls autoplay muted playsinline></video>
+          <iframe id="iframePlayer" class="iframe-player hidden" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
           <div id="playerOverlay" class="player-overlay">
             <div class="overlay-inner">
               <div class="signal-icon">📡</div>
-              <p id="overlayTitle">Waiting for Stream Input...</p>
-              <p class="overlay-sub">Start streaming from OBS Studio or vMix using your Server RTMP URL</p>
+              <p id="overlayTitle">Stream Currently Offline</p>
+              <p id="overlaySub" class="overlay-sub">The admin will start broadcasting shorty. Check back soon!</p>
             </div>
           </div>
         </div>
@@ -69,71 +87,142 @@
         <!-- Stream Info Stats -->
         <div class="stream-stats-bar">
           <div class="stat-item">
-            <span class="stat-label">Latency</span>
-            <span id="statLatency" class="stat-value">&lt; 0.8s</span>
+            <span class="stat-label">Stream Status</span>
+            <span id="statStatus" class="stat-value text-red">OFFLINE</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Resolution</span>
-            <span id="statRes" class="stat-value">Auto / 1080p60</span>
+            <span class="stat-label">Active Channel</span>
+            <span id="statChannel" class="stat-value">Channel 1</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Audio</span>
-            <span id="statAudio" class="stat-value">AAC / Stereo</span>
+            <span class="stat-label">Protocol Engine</span>
+            <span id="statProto" class="stat-value">HLS / FLV / WebRTC</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Protocol</span>
-            <span id="statProto" class="stat-value">HTTP-FLV / RTMP</span>
+            <span class="stat-label">Hosting Platform</span>
+            <span class="stat-value text-cyan">Vercel Cloud</span>
           </div>
         </div>
       </section>
 
-      <!-- Right Column: Settings & Credentials -->
+      <!-- Right Column: User Sidebar -->
       <aside class="sidebar-column">
-        <!-- Connection Config Card -->
-        <div class="card config-card">
+        <!-- Live Chat / Activity -->
+        <div class="card chat-card">
           <div class="card-header">
-            <span class="card-title">⚙️ OBS / vMix Setup</span>
+            <span class="card-title">💬 Live Activity</span>
+            <span class="badge badge-ready">Public</span>
           </div>
-
-          <div class="input-group">
-            <label class="input-label">RTMP Server Ingest URL</label>
-            <div class="input-with-btn">
-              <input type="text" id="inputRtmpUrl" class="text-input" value="rtmp://rtmp-live-server.onrender.com/live" readonly />
-              <button class="btn-copy" onclick="copyInput('inputRtmpUrl')">Copy</button>
+          <div id="chatMessages" class="chat-messages">
+            <div class="chat-msg system">
+              <span class="msg-author">System:</span>
+              <span class="msg-content">Welcome to the VercelStream live broadcast viewer!</span>
             </div>
           </div>
-
-          <div class="input-group">
-            <label class="input-label">Stream Key</label>
-            <div class="input-with-btn">
-              <input type="text" id="inputStreamKey" class="text-input" value="stream" readonly />
-              <button class="btn-copy" onclick="copyInput('inputStreamKey')">Copy</button>
-            </div>
+          <div class="chat-input-row">
+            <input type="text" id="chatInput" class="text-input" placeholder="Say something..." onkeypress="handleChatKey(event)" />
+            <button class="btn-primary-sm" onclick="sendChatMessage()">Send</button>
           </div>
-
-          <div class="input-group">
-            <label class="input-label">HTTP-FLV Live Stream Playback URL</label>
-            <div class="input-with-btn">
-              <input type="text" id="inputFlvUrl" class="text-input" value="https://rtmp-live-server.onrender.com/live/stream.flv" />
-              <button class="btn-primary-sm" onclick="applyPlaybackUrl()">Apply</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Quick Instructions Card -->
-        <div class="card guide-card">
-          <div class="card-header">
-            <span class="card-title">📡 How to Stream from OBS</span>
-          </div>
-          <ol class="guide-steps">
-            <li>Open <strong>OBS Studio</strong> → click <strong>Settings → Stream</strong></li>
-            <li>Service: <strong>Custom...</strong></li>
-            <li>Server: Paste <code>RTMP Server Ingest URL</code> above</li>
-            <li>Stream Key: Paste <code>stream</code></li>
-            <li>Click <strong>Start Streaming</strong> → video appears on this page in <strong>&lt;1 sec</strong>!</li>
-          </ol>
         </div>
       </aside>
+    </main>
+
+    <!-- ==================== TAB 2: ADMIN CONTROL PANEL ==================== -->
+    <main id="adminPanel" class="admin-grid hidden">
+      <!-- Admin Authentication Modal (if not unlocked) -->
+      <div id="adminLockScreen" class="card admin-lock-card">
+        <div class="lock-inner">
+          <div class="lock-icon">🔒</div>
+          <h2>Admin Control Center</h2>
+          <p class="lock-sub">Enter the Admin Passcode to manage live streams</p>
+          <div class="lock-form">
+            <input type="password" id="adminPassInput" class="text-input" placeholder="Enter Admin Passcode (Default: admin123)" />
+            <button class="btn-primary" onclick="unlockAdmin()">Unlock Control Panel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Admin Main Dashboard (Shown after unlock) -->
+      <div id="adminMainContent" class="admin-dashboard hidden">
+        <!-- Control Card 1: Broadcast Manager -->
+        <section class="card admin-card">
+          <div class="card-header">
+            <span class="card-title">🔴 Live Broadcast Controller</span>
+            <div class="toggle-group">
+              <button id="btnStartBroadcast" class="btn-success" onclick="setBroadcastStatus(true)">▶ START LIVE BROADCAST</button>
+              <button id="btnStopBroadcast" class="btn-danger" onclick="setBroadcastStatus(false)">⏹ END BROADCAST</button>
+            </div>
+          </div>
+
+          <div class="admin-form-grid">
+            <div class="input-group">
+              <label class="input-label">Select Channel to Configure</label>
+              <select id="adminChannelSelect" class="select-input" onchange="loadAdminChannelConfig(this.value)">
+                <option value="ch1">Channel 1 (Primary)</option>
+                <option value="ch2">Channel 2 (Backup)</option>
+                <option value="ch3">Channel 3 (Event Special)</option>
+              </select>
+            </div>
+
+            <div class="input-group">
+              <label class="input-label">Stream Source Format</label>
+              <select id="adminSourceFormat" class="select-input">
+                <option value="hls">HLS Stream (.m3u8)</option>
+                <option value="flv">HTTP-FLV Stream (.flv)</option>
+                <option value="iframe">YouTube / Twitch Embed URL</option>
+                <option value="mp4">Direct Video File (.mp4)</option>
+              </select>
+            </div>
+
+            <div class="input-group full-width">
+              <label class="input-label">Live Stream Source URL</label>
+              <input type="text" id="adminStreamUrl" class="text-input" placeholder="e.g. https://domain.com/live/stream.m3u8 or https://www.youtube.com/embed/VIDEO_ID" />
+            </div>
+
+            <div class="input-group full-width">
+              <label class="input-label">Broadcast Announcement Message (Optional)</label>
+              <input type="text" id="adminAnnounceInput" class="text-input" placeholder="e.g. Event starting in 5 minutes! Stay tuned." />
+            </div>
+
+            <div class="form-actions full-width">
+              <button class="btn-primary" onclick="saveAdminChannelConfig()">💾 Save & Publish Stream Settings</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Control Card 2: Stream Key & Access Manager -->
+        <section class="card admin-card">
+          <div class="card-header">
+            <span class="card-title">🔑 Stream Keys & Access Management</span>
+          </div>
+
+          <div class="keys-table-wrapper">
+            <table class="keys-table">
+              <thead>
+                <tr>
+                  <th>Stream Key</th>
+                  <th>Assigned Channel</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="keysTableBody">
+                <!-- Dynamically Populated -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="add-key-bar">
+            <input type="text" id="newKeyName" class="text-input" placeholder="New Stream Key Name (e.g. key_vip_01)" />
+            <select id="newKeyChannel" class="select-input">
+              <option value="ch1">Channel 1</option>
+              <option value="ch2">Channel 2</option>
+              <option value="ch3">Channel 3</option>
+            </select>
+            <button class="btn-primary-sm" onclick="generateNewKey()">+ Generate Key</button>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
 
