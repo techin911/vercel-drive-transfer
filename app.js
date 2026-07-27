@@ -1,8 +1,7 @@
-// DriveTransfer — Pixeldrain Ultrafast Direct Uploader
-// Uploads files up to 10 GB anonymously and instantly with zero config
+// DriveTransfer — Gofile.io Ultrafast Cloud Uploader
+// Direct fast uploads, unlimited file size, zero setup, zero login, individual file delete support
 
-const FILES_KEY = 'drivetransfer_pixeldrain_files';
-const PIXELDRAIN_API = 'https://pixeldrain.com/api/file';
+const FILES_KEY = 'drivetransfer_files';
 
 let uploadQueue = [];
 let isUploading = false;
@@ -34,7 +33,7 @@ function handleFileSelect(event) {
   event.target.value = '';
 }
 
-// ─── Queue & Upload ───────────────────────────────────────────────────────────
+// ─── Queue ────────────────────────────────────────────────────────────────────
 function queueFiles(files) {
   for (const f of files) uploadQueue.push(f);
   if (!isUploading) processQueue();
@@ -50,31 +49,91 @@ async function processQueue() {
   else isUploading = false;
 }
 
+// ─── Gofile.io Upload ─────────────────────────────────────────────────────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    const fileData = await uploadToPixeldrain(file);
+    // Step 1: Get best available Gofile server
+    const serverResp = await fetch('https://api.gofile.io/servers');
+    const serverData = await serverResp.json().catch(() => ({}));
+    
+    let serverName = 'store1';
+    if (serverData.status === 'ok' && serverData.data && serverData.data.servers && serverData.data.servers.length) {
+      serverName = serverData.data.servers[0].name;
+    }
+
+    const uploadUrl = `https://${serverName}.gofile.io/contents/uploadfile`;
+
+    // Step 2: Upload file via FormData with live progress, speed & ETA
+    const result = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      currentXHR = xhr;
+      const formData = new FormData();
+      formData.append('file', file);
+
+      let startTime = Date.now();
+      let lastUploaded = 0;
+
+      xhr.upload.onprogress = (e) => {
+        if (cancelFlag) { xhr.abort(); return; }
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          const now = Date.now();
+          const elapsed = (now - startTime) / 1000;
+          const bytesDone = e.loaded - lastUploaded;
+          const speedBps = elapsed > 0 ? bytesDone / elapsed : 0;
+          const remaining = e.total - e.loaded;
+          const etaSec = speedBps > 0 ? remaining / speedBps : 0;
+
+          setProgress(file.name, pct, e.loaded, e.total, speedBps, etaSec);
+          startTime = now;
+          lastUploaded = e.loaded;
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText)); }
+          catch (err) { reject(new Error('Invalid JSON response from server')); }
+        } else {
+          reject(new Error(`Server error HTTP ${xhr.status}`));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.onabort = () => reject(new Error('Upload cancelled'));
+
+      xhr.open('POST', uploadUrl, true);
+      xhr.send(formData);
+    });
+
+    if (result.status !== 'ok') {
+      throw new Error(result.message || 'Upload failed on Gofile');
+    }
+
+    const fileData = result.data || {};
+    const downloadPage = fileData.downloadPage || '#';
+    const fileId = fileData.fileId || ('f_' + Date.now());
 
     setBadge('success', '✅ Completed');
-    const viewUrl = `https://pixeldrain.com/u/${fileData.id}`;
-    
+
     saveFileRecord({
-      id: fileData.id,
+      id: fileId,
       name: file.name,
-      url: viewUrl,
+      url: downloadPage,
       size: file.size,
-      mimeType: file.type,
       date: new Date().toISOString()
     });
 
     showResult(
-      `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded to Pixeldrain! ` +
-      `<a href="${viewUrl}" target="_blank" class="link">Open File →</a>`,
+      `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded successfully! ` +
+      `<a href="${downloadPage}" target="_blank" class="link">Download Link →</a>`,
       'success'
     );
+
   } catch (err) {
     if (cancelFlag) {
       setBadge('ready', 'Ready');
@@ -89,76 +148,30 @@ async function uploadFile(file) {
   setTimeout(() => setBadge('ready', 'Ready'), 4000);
 }
 
-function uploadToPixeldrain(file) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    currentXHR = xhr;
-
-    const formData = new FormData();
-    formData.append('file', file, file.name);
-
-    let startTime = Date.now();
-    let lastLoaded = 0;
-    let lastTime = startTime;
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        const now = Date.now();
-        const elapsed = (now - lastTime) / 1000;
-        const bytesDone = e.loaded - lastLoaded;
-        const speedBps = elapsed > 0 ? bytesDone / elapsed : 0;
-        const remaining = e.total - e.loaded;
-        const etaSec = speedBps > 0 ? remaining / speedBps : 0;
-
-        setProgress(file.name, Math.round((e.loaded / e.total) * 100), e.loaded, e.total, speedBps, etaSec);
-        lastLoaded = e.loaded;
-        lastTime = now;
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status === 200 || xhr.status === 201) {
-        try {
-          const resp = JSON.parse(xhr.responseText);
-          if (resp.success) resolve(resp);
-          else reject(new Error(resp.value || 'Pixeldrain upload failed'));
-        } catch (err) {
-          reject(new Error('Invalid response from Pixeldrain'));
-        }
-      } else {
-        reject(new Error(`Pixeldrain HTTP ${xhr.status}`));
-      }
-    };
-
-    xhr.onerror = () => reject(new Error('Network error uploading to Pixeldrain'));
-    xhr.onabort = () => reject(new Error('Cancelled'));
-
-    xhr.open('POST', PIXELDRAIN_API, true);
-    xhr.send(formData);
-  });
-}
-
 function cancelUpload() {
   cancelFlag = true;
   if (currentXHR) { currentXHR.abort(); currentXHR = null; }
   uploadQueue = [];
 }
 
-// ─── Local File Records ───────────────────────────────────────────────────────
+// ─── File Records (localStorage) ──────────────────────────────────────────────
 function getFileRecords() {
   try { return JSON.parse(localStorage.getItem(FILES_KEY)) || []; }
   catch { return []; }
 }
+
 function saveFileRecord(record) {
   const records = getFileRecords();
   records.unshift(record);
   localStorage.setItem(FILES_KEY, JSON.stringify(records.slice(0, 200)));
   renderFilesList();
 }
+
 function removeFileRecord(fileId) {
   localStorage.setItem(FILES_KEY, JSON.stringify(getFileRecords().filter(r => r.id !== fileId)));
   renderFilesList();
 }
+
 function clearAllFiles() {
   if (!confirm('Clear file list?')) return;
   localStorage.removeItem(FILES_KEY);
@@ -169,10 +182,12 @@ function clearAllFiles() {
 function renderFilesList() {
   const list = document.getElementById('filesList');
   const records = getFileRecords();
+
   if (!records.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📂</div><p>No files uploaded yet.</p><p class="empty-sub">Completed files and their size will appear here.</p></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📂</div><p>No files uploaded yet.</p><p class="empty-sub">Completed files and their links will appear here.</p></div>`;
     return;
   }
+
   list.innerHTML = records.map(r => {
     const icon = getFileEmoji(r.name);
     const size = formatBytes(r.size);
@@ -185,7 +200,7 @@ function renderFilesList() {
           <div class="file-meta"><strong>${size}</strong> &bull; ${date}</div>
         </div>
         <div class="file-actions">
-          <a href="${r.url}" target="_blank" class="btn-sm btn-view">View</a>
+          <a href="${r.url}" target="_blank" class="btn-sm btn-view">Link</a>
           <button class="btn-sm btn-delete" onclick="removeFileRecord('${r.id}')">🗑️</button>
         </div>
       </div>`;
@@ -224,6 +239,7 @@ function showResult(html, type) {
   el.innerHTML = html;
   el.classList.remove('hidden');
 }
+
 function hideResult() { document.getElementById('uploadResult').classList.add('hidden'); }
 
 function showToast(msg, type) {
