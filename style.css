@@ -237,7 +237,12 @@ body {
 }
 .dropzone-icon {
   width: 64px; height: 64px;
+  margin: 0 auto 8px;
   animation: float 3s ease-in-out infinite;
+}
+.dropzone-icon svg {
+  width: 64px; height: 64px;
+  display: block;
 }
 @keyframes float {
   0%,100% { transform: translateY(0); }
