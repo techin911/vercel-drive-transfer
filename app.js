@@ -1,14 +1,13 @@
-// PixelTransfer — Powered by Pixeldrain API
-// Account: techin911
-// Features: Direct fast upload, live progress/speed/ETA, download & view links, individual file delete API
+// File Transfer — Powered by Pixeldrain API
+// Uses official PUT /api/file/{name} binary stream upload method
+// API Key: 969ca829-a330-44af-a95a-473ae11cd1cb
+
+const API_KEY = '969ca829-a330-44af-a95a-473ae11cd1cb';
+const FILES_KEY = 'pixeltransfer_files';
 
 function getAuthHeader() {
-  // Encrypted/obfuscated Pixeldrain API Key: 969ca829-a330-44af-a95a-473ae11cd1cb
-  const token = 'Ojk2OWNhODI5LWEzMzAtNDRhZi1hOTVhLTQ3M2FlMTFjZDFjYg==';
-  return 'Basic ' + token;
+  return 'Basic ' + btoa(':' + API_KEY);
 }
-
-const FILES_KEY = 'pixeltransfer_files';
 
 let uploadQueue = [];
 let isUploading = false;
@@ -57,24 +56,18 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Pixeldrain Upload ────────────────────────────────────────────────────────
+// ─── Official Pixeldrain PUT /api/file/{name} Upload ──────────────────────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    // Basic Auth embedded in URL to bypass Chrome CORS preflight header blocking
-    const apiKey = '969ca829-a330-44af-a95a-473ae11cd1cb';
-    const uploadUrl = `https://:${apiKey}@pixeldrain.com/api/file`;
+    const uploadUrl = `https://pixeldrain.com/api/file/${encodeURIComponent(file.name)}`;
 
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       currentXHR = xhr;
-
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('name', file.name);
 
       let startTime = Date.now();
       let lastUploaded = 0;
@@ -99,11 +92,11 @@ async function uploadFile(file) {
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try { resolve(JSON.parse(xhr.responseText)); }
-          catch (err) { reject(new Error('Invalid JSON response')); }
+          catch (err) { reject(new Error('Invalid JSON response from Pixeldrain')); }
         } else {
           try {
             const errJson = JSON.parse(xhr.responseText);
-            reject(new Error(errJson.message || `HTTP ${xhr.status}`));
+            reject(new Error(errJson.message || `HTTP ${xhr.status}: ${errJson.value || ''}`));
           } catch {
             reject(new Error(`Server error HTTP ${xhr.status}`));
           }
@@ -113,8 +106,9 @@ async function uploadFile(file) {
       xhr.onerror = () => reject(new Error('Network error during upload'));
       xhr.onabort = () => reject(new Error('Upload cancelled'));
 
-      xhr.open('POST', uploadUrl, true);
-      xhr.send(formData);
+      xhr.open('PUT', uploadUrl, true);
+      xhr.setRequestHeader('Authorization', getAuthHeader());
+      xhr.send(file);
     });
 
     if (!result.success || !result.id) {
@@ -163,7 +157,7 @@ function cancelUpload() {
   uploadQueue = [];
 }
 
-// ─── Delete File from Pixeldrain Account ──────────────────────────────────────
+// ─── DELETE /api/file/{id} ────────────────────────────────────────────────────
 async function deleteFile(fileId, btn) {
   if (!confirm('Delete this file permanently from Pixeldrain?')) return;
   if (btn) {
@@ -194,7 +188,7 @@ async function deleteFile(fileId, btn) {
   }
 }
 
-// ─── Optional Sync User Files from Pixeldrain API ────────────────────────────
+// ─── GET /api/user/files Account Sync ─────────────────────────────────────────
 async function syncRemoteFiles() {
   try {
     const resp = await fetch('https://pixeldrain.com/api/user/files', {
@@ -227,7 +221,6 @@ function getFileRecords() {
 
 function saveFileRecord(record) {
   const records = getFileRecords();
-  // Avoid duplicates
   const filtered = records.filter(r => r.id !== record.id);
   filtered.unshift(record);
   localStorage.setItem(FILES_KEY, JSON.stringify(filtered.slice(0, 200)));
@@ -251,7 +244,7 @@ function renderFilesList() {
   const records = getFileRecords();
 
   if (!records.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">⚡</div><p>No files uploaded yet.</p><p class="empty-sub">Files uploaded to Pixeldrain will appear here.</p></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">⚡</div><p>No files uploaded yet.</p><p class="empty-sub">Completed files and their links will appear here.</p></div>`;
     return;
   }
 
