@@ -1,7 +1,7 @@
-// DriveTransfer — Gofile.io Ultrafast Cloud Uploader
-// Direct fast uploads, unlimited file size, zero setup, zero login, individual file delete support
+// GoTransfer — Pure Gofile.io Unlimited Cloud Uploader
+// Fast uploads, unlimited file size, zero configuration, instant download links, file delete history
 
-const FILES_KEY = 'drivetransfer_files';
+const FILES_KEY = 'gotransfer_files';
 
 let uploadQueue = [];
 let isUploading = false;
@@ -49,14 +49,14 @@ async function processQueue() {
   else isUploading = false;
 }
 
-// ─── Gofile.io Upload ─────────────────────────────────────────────────────────
+// ─── Gofile.io Upload Engine ──────────────────────────────────────────────────
 async function uploadFile(file) {
   setBadge('uploading', '⏫ Uploading...');
   showProgress(file.name, file.size);
   hideResult();
 
   try {
-    // Step 1: Get best available Gofile server
+    // Step 1: Query Gofile API for active store server
     const serverResp = await fetch('https://api.gofile.io/servers');
     const serverData = await serverResp.json().catch(() => ({}));
     
@@ -97,7 +97,7 @@ async function uploadFile(file) {
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try { resolve(JSON.parse(xhr.responseText)); }
-          catch (err) { reject(new Error('Invalid JSON response from server')); }
+          catch (err) { reject(new Error('Invalid response from server')); }
         } else {
           reject(new Error(`Server error HTTP ${xhr.status}`));
         }
@@ -130,7 +130,7 @@ async function uploadFile(file) {
 
     showResult(
       `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded successfully! ` +
-      `<a href="${downloadPage}" target="_blank" class="link">Download Link →</a>`,
+      `<a href="${downloadPage}" target="_blank" class="link">Get Download Link →</a>`,
       'success'
     );
 
@@ -154,7 +154,7 @@ function cancelUpload() {
   uploadQueue = [];
 }
 
-// ─── File Records (localStorage) ──────────────────────────────────────────────
+// ─── File History ─────────────────────────────────────────────────────────────
 function getFileRecords() {
   try { return JSON.parse(localStorage.getItem(FILES_KEY)) || []; }
   catch { return []; }
@@ -173,7 +173,7 @@ function removeFileRecord(fileId) {
 }
 
 function clearAllFiles() {
-  if (!confirm('Clear file list?')) return;
+  if (!confirm('Clear uploaded files list?')) return;
   localStorage.removeItem(FILES_KEY);
   renderFilesList();
 }
@@ -184,7 +184,7 @@ function renderFilesList() {
   const records = getFileRecords();
 
   if (!records.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📂</div><p>No files uploaded yet.</p><p class="empty-sub">Completed files and their links will appear here.</p></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📂</div><p>No files uploaded yet.</p><p class="empty-sub">Uploaded files and their Gofile download links will appear here.</p></div>`;
     return;
   }
 
@@ -200,7 +200,7 @@ function renderFilesList() {
           <div class="file-meta"><strong>${size}</strong> &bull; ${date}</div>
         </div>
         <div class="file-actions">
-          <a href="${r.url}" target="_blank" class="btn-sm btn-view">Link</a>
+          <a href="${r.url}" target="_blank" class="btn-sm btn-view">Download Link</a>
           <button class="btn-sm btn-delete" onclick="removeFileRecord('${r.id}')">🗑️</button>
         </div>
       </div>`;
