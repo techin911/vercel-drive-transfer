@@ -3,15 +3,16 @@
 // No backend server — 100% browser to Google Drive
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+const DEFAULT_CLIENT_ID = '218914001742-ek6ptsbn8voiuj8da5uqamda57kd9vb.apps.googleusercontent.com';
 const CLIENT_ID_KEY   = 'drivetransfer_client_id';
 const FILES_KEY       = 'drivetransfer_files';
-const CHUNK_SIZE      = 8 * 1024 * 1024;   // 8 MB chunks (must be multiple of 256 KB)
+const CHUNK_SIZE      = 8 * 1024 * 1024;   // 8 MB chunks
 const DRIVE_UPLOAD    = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable';
 const DRIVE_FILES     = 'https://www.googleapis.com/drive/v3/files';
 const SCOPES          = 'https://www.googleapis.com/auth/drive.file';
 
 // ─── State ────────────────────────────────────────────────────────────────────
-let clientId     = localStorage.getItem(CLIENT_ID_KEY) || '';
+let clientId     = localStorage.getItem(CLIENT_ID_KEY) || DEFAULT_CLIENT_ID;
 let accessToken  = null;
 let tokenExpiry  = 0;
 let tokenClient  = null;
