@@ -1,136 +1,18 @@
-// DriveTransfer — Ultrafast Cloud Uploader
-// Permanent Connection + Token Persistence + Direct Resumable Upload
+// DriveTransfer — Zero Login Direct Cloud Uploader
+// Uploads from ANY PC or device directly into YOUR Drive via Vercel Serverless Function
 
-function getSecureClientId() {
-  const enc = ["MjE4OTE0MDAxNzQyLWVrNnB0c2JuOHZvaXVqOGRhNXVxYW1kYTU3a2Q5dmIuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20="];
-  try { return atob(enc[0]); } catch { return ''; }
-}
+const FILES_KEY  = 'drivetransfer_files';
+const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB chunks
 
-const CLIENT_ID_KEY   = 'drivetransfer_client_id';
-const TOKEN_KEY       = 'drivetransfer_access_token';
-const EXPIRY_KEY      = 'drivetransfer_token_expiry';
-const FILES_KEY       = 'drivetransfer_files';
-const CHUNK_SIZE      = 8 * 1024 * 1024;   // 8 MB chunks
-const DRIVE_UPLOAD    = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable';
-const DRIVE_FILES     = 'https://www.googleapis.com/drive/v3/files';
-const SCOPES          = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
+let uploadQueue = [];
+let isUploading = false;
+let cancelFlag  = false;
+let currentXHR  = null;
 
-// ─── State ────────────────────────────────────────────────────────────────────
-let clientId     = localStorage.getItem(CLIENT_ID_KEY) || getSecureClientId();
-let accessToken  = localStorage.getItem(TOKEN_KEY) || null;
-let tokenExpiry  = parseInt(localStorage.getItem(EXPIRY_KEY) || '0', 10);
-let tokenClient  = null;
-let gisReady     = false;
-let uploadQueue  = [];
-let isUploading  = false;
-let cancelFlag   = false;
-let currentXHR   = null;
-let userProfile  = null;
-
-// ─── Init ─────────────────────────────────────────────────────────────────────
 window.onload = () => {
-  if (isAuthenticated()) {
-    updateUserHeader();
-    updateStatusDot();
-  } else {
-    updateStatusDot();
-  }
   renderFilesList();
   setupDropzone();
-  waitForGIS();
 };
-
-function waitForGIS() {
-  if (window.google && google.accounts) {
-    gisReady = true;
-    initTokenClient();
-    // Silent auto connect if token expired or missing
-    if (!isAuthenticated()) {
-      setTimeout(() => {
-        try { tokenClient.requestAccessToken({ prompt: '' }); } catch (e) {}
-      }, 500);
-    }
-  } else {
-    setTimeout(waitForGIS, 300);
-  }
-}
-
-function initTokenClient() {
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: clientId,
-    scope: SCOPES,
-    callback: onTokenResponse
-  });
-}
-
-async function onTokenResponse(response) {
-  if (response.error) {
-    return;
-  }
-  accessToken = response.access_token;
-  tokenExpiry = Date.now() + (parseInt(response.expires_in) * 1000) - 60000;
-  
-  // Permanent Storage of Auth Tokens
-  localStorage.setItem(TOKEN_KEY, accessToken);
-  localStorage.setItem(EXPIRY_KEY, tokenExpiry.toString());
-
-  updateUserHeader();
-  updateStatusDot();
-  showToast('✅ Account Connected!', 'success');
-
-  if (uploadQueue.length && !isUploading) {
-    processQueue();
-  }
-}
-
-function updateUserHeader() {
-  const btn = document.getElementById('btnSignIn');
-  if (!btn) return;
-  btn.innerHTML = `<span>✓ Connected</span>`;
-  btn.style.background = 'rgba(0,230,118,0.15)';
-  btn.style.color = '#00e676';
-  btn.style.borderColor = 'rgba(0,230,118,0.4)';
-}
-
-function isAuthenticated() {
-  return accessToken && Date.now() < tokenExpiry;
-}
-
-async function ensureToken() {
-  if (isAuthenticated()) return accessToken;
-  return new Promise((resolve, reject) => {
-    if (!tokenClient) {
-      reject(new Error('Auth client not ready'));
-      return;
-    }
-    const origCallback = tokenClient.callback;
-    tokenClient.callback = (resp) => {
-      tokenClient.callback = origCallback;
-      if (resp.error) reject(new Error(resp.error));
-      else {
-        onTokenResponse(resp);
-        resolve(accessToken);
-      }
-    };
-    tokenClient.requestAccessToken({ prompt: '' });
-  });
-}
-
-function signIn() {
-  if (!tokenClient && gisReady) initTokenClient();
-  if (tokenClient) tokenClient.requestAccessToken();
-}
-
-function updateStatusDot() {
-  const dot = document.getElementById('statusDot');
-  if (isAuthenticated()) {
-    dot.className = 'status-dot connected';
-    dot.title = 'Connected';
-  } else {
-    dot.className = 'status-dot';
-    dot.title = 'Click Connect Account';
-  }
-}
 
 // ─── Dropzone ─────────────────────────────────────────────────────────────────
 function setupDropzone() {
@@ -145,14 +27,6 @@ function setupDropzone() {
     ev.preventDefault();
     if (ev.dataTransfer.files.length) queueFiles(ev.dataTransfer.files);
   });
-}
-
-function onDropzoneClick() {
-  if (!isAuthenticated()) {
-    signIn();
-    return;
-  }
-  document.getElementById('fileInput').click();
 }
 
 function handleFileSelect(event) {
@@ -182,42 +56,33 @@ async function uploadFile(file) {
   hideResult();
 
   try {
-    const token = await ensureToken();
-
-    // 1. Create resumable upload session
-    const metadata = {
-      name: file.name,
-      mimeType: file.type || 'application/octet-stream',
-      appProperties: { app: 'DriveTransfer', uploadedAt: new Date().toISOString() }
-    };
-
-    const initResp = await fetch(DRIVE_UPLOAD, {
+    // 1. Get Resumable Upload Session URL from Vercel API Route
+    const sessionResp = await fetch('/api/session', {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json',
-        'X-Upload-Content-Type': file.type || 'application/octet-stream',
-        'X-Upload-Content-Length': file.size
-      },
-      body: JSON.stringify(metadata)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: file.name,
+        size: file.size,
+        type: file.type || 'application/octet-stream'
+      })
     });
 
-    if (!initResp.ok) {
-      const err = await initResp.json().catch(() => ({}));
-      throw new Error(err.error?.message || 'Failed to start upload session');
+    if (!sessionResp.ok) {
+      const errData = await sessionResp.json().catch(() => ({}));
+      throw new Error(errData.error || `Server Error HTTP ${sessionResp.status}`);
     }
 
-    const uploadUrl = initResp.headers.get('Location');
-    if (!uploadUrl) throw new Error('No upload URL returned');
+    const { uploadUrl } = await sessionResp.json();
+    if (!uploadUrl) throw new Error('No upload session URL received');
 
-    // 2. Upload chunks with live size tracking
+    // 2. Upload chunks directly to the session URL
     const fileData = await uploadChunks(file, uploadUrl);
 
     setBadge('success', '✅ Completed');
     saveFileRecord({
-      id: fileData.id,
-      name: fileData.name,
-      url: `https://drive.google.com/file/d/${fileData.id}/view`,
+      id: fileData.id || ('f_' + Date.now()),
+      name: fileData.name || file.name,
+      url: fileData.id ? `https://drive.google.com/file/d/${fileData.id}/view` : '#',
       size: file.size,
       mimeType: file.type,
       date: new Date().toISOString()
@@ -225,7 +90,7 @@ async function uploadFile(file) {
 
     showResult(
       `✅ <strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) uploaded successfully! ` +
-      `<a href="https://drive.google.com/file/d/${fileData.id}/view" target="_blank" class="link">Open File →</a>`,
+      (fileData.id ? `<a href="https://drive.google.com/file/d/${fileData.id}/view" target="_blank" class="link">Open File →</a>` : ''),
       'success'
     );
   } catch (err) {
@@ -234,7 +99,7 @@ async function uploadFile(file) {
       showResult('Upload cancelled.', 'error');
     } else {
       setBadge('error', '❌ Error');
-      showResult('❌ ' + err.message, 'error');
+      showResult('❌ Upload failed: ' + err.message, 'error');
       console.error(err);
     }
   }
@@ -317,18 +182,18 @@ async function deleteFile(fileId, btn) {
   btn.textContent = '...';
 
   try {
-    const token = await ensureToken();
-    const resp = await fetch(`${DRIVE_FILES}/${fileId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + token }
+    const resp = await fetch('/api/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileId })
     });
 
-    if (resp.ok || resp.status === 204) {
+    if (resp.ok) {
       removeFileRecord(fileId);
       showToast('🗑️ File deleted.', 'success');
     } else {
       const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error?.message || `HTTP ${resp.status}`);
+      throw new Error(err.error || `HTTP ${resp.status}`);
     }
   } catch (err) {
     showToast('❌ Delete failed: ' + err.message, 'error');
@@ -378,14 +243,14 @@ function renderFilesList() {
           <div class="file-meta"><strong>${size}</strong> &bull; ${date}</div>
         </div>
         <div class="file-actions">
-          <a href="${r.url}" target="_blank" class="btn-sm btn-view">View</a>
+          ${r.url && r.url !== '#' ? `<a href="${r.url}" target="_blank" class="btn-sm btn-view">View</a>` : ''}
           <button class="btn-sm btn-delete" onclick="deleteFile('${r.id}', this)">🗑️</button>
         </div>
       </div>`;
   }).join('');
 }
 
-showProgress = function(name, total) {
+function showProgress(name, total) {
   document.getElementById('progressSection').classList.remove('hidden');
   document.getElementById('progressFileName').textContent = name;
   document.getElementById('progressPct').textContent = '0%';

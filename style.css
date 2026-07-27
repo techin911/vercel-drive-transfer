@@ -108,14 +108,26 @@ body {
 }
 .icon-btn:hover { background: rgba(255,255,255,0.1); color: var(--text); }
 
-.status-dot {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  transition: background 0.3s;
-  background: var(--muted);
+.status-badge {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px;
+  background: rgba(0,230,118,0.1);
+  border: 1px solid rgba(0,230,118,0.25);
+  border-radius: 20px;
+  color: var(--green);
+  font-size: 12px; font-weight: 600;
 }
-.status-dot.connected { background: var(--green); box-shadow: 0 0 8px var(--green); }
-.status-dot.warning   { background: #ffab00; box-shadow: 0 0 8px #ffab00; }
+.pulse-dot {
+  width: 8px; height: 8px;
+  background: var(--green);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--green);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.2); }
+}
 
 /* Auth Banner */
 .auth-banner {
