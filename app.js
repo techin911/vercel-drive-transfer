@@ -209,42 +209,113 @@ function showAdminDashboard(show) {
   }
 }
 
-// ─── Direct Browser Broadcaster (Webcam & Screen Share) ───────────────────────
+// ─── Direct Zero-OBS Web Studio Broadcaster (100% Vercel Browser Engine) ──────
+let isMicMuted = false;
+let currentCamId = null;
+let currentMicId = null;
+let studioBroadcastChannel = new BroadcastChannel('vercelstream_zero_obs_channel');
+
+studioBroadcastChannel.onmessage = (e) => {
+  if (e.data && e.data.type === 'LIVE_STATE_CHANGE') {
+    updateLiveBadge();
+    loadChannel(activeChannel);
+  }
+};
+
+async function populateMediaDevices() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const camSelect = document.getElementById('studioCamSelect');
+    const micSelect = document.getElementById('studioMicSelect');
+
+    if (camSelect) {
+      camSelect.innerHTML = '<option value="">Default Camera</option>';
+      devices.filter(d => d.kind === 'videoinput').forEach((d, idx) => {
+        camSelect.innerHTML += `<option value="${d.deviceId}">${d.label || 'Camera ' + (idx + 1)}</option>`;
+      });
+    }
+
+    if (micSelect) {
+      micSelect.innerHTML = '<option value="">Default Microphone</option>';
+      devices.filter(d => d.kind === 'audioinput').forEach((d, idx) => {
+        micSelect.innerHTML += `<option value="${d.deviceId}">${d.label || 'Microphone ' + (idx + 1)}</option>`;
+      });
+    }
+  } catch (e) { console.log('Device enumeration:', e); }
+}
+
 async function startCameraStream() {
   try {
     stopLocalStream();
-    mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const camId = document.getElementById('studioCamSelect') ? document.getElementById('studioCamSelect').value : null;
+    const micId = document.getElementById('studioMicSelect') ? document.getElementById('studioMicSelect').value : null;
+    const quality = document.getElementById('studioQualitySelect') ? document.getElementById('studioQualitySelect').value : '720p';
+
+    let videoConstraint = true;
+    if (quality === '1080p') videoConstraint = { width: 1920, height: 1080, frameRate: 60 };
+    else if (quality === '720p') videoConstraint = { width: 1280, height: 720, frameRate: 30 };
+    else if (quality === '480p') videoConstraint = { width: 854, height: 480, frameRate: 30 };
+
+    if (camId) videoConstraint = { ...videoConstraint, deviceId: { exact: camId } };
+    const audioConstraint = micId ? { deviceId: { exact: micId } } : true;
+
+    mediaStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint, audio: audioConstraint });
     attachLocalStream();
-    showToast('🎥 Camera active! Broadcasting live from browser.', 'success');
+    populateMediaDevices();
+    showToast('🎥 Zero-OBS Web Camera Live! Broadcasting directly from browser.', 'success');
   } catch (err) {
-    showToast('❌ Camera access denied: ' + err.message, 'error');
+    showToast('❌ Camera access error: ' + err.message, 'error');
   }
 }
 
 async function startScreenShare() {
   try {
     stopLocalStream();
-    mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' }, audio: true });
     attachLocalStream();
-    showToast('🖥️ Screen share active!', 'success');
+    showToast('🖥️ Screen Share Live! Broadcasting browser/screen without OBS.', 'success');
   } catch (err) {
     showToast('❌ Screen share cancelled', 'error');
   }
 }
 
+function toggleMicrophoneMute() {
+  if (!mediaStream) return;
+  const audioTracks = mediaStream.getAudioTracks();
+  if (audioTracks.length === 0) {
+    showToast('⚠️ No audio track found', 'error');
+    return;
+  }
+  isMicMuted = !isMicMuted;
+  audioTracks.forEach(track => track.enabled = !isMicMuted);
+  const btn = document.getElementById('btnMuteMic');
+  if (btn) {
+    btn.textContent = isMicMuted ? '🔇 Unmute Mic' : '🎙️ Mute Mic';
+    btn.className = isMicMuted ? 'btn-sm btn-danger-sm' : 'btn-sm btn-action';
+  }
+  showToast(isMicMuted ? '🔇 Microphone Muted' : '🎙️ Microphone Unmuted', isMicMuted ? 'error' : 'success');
+}
+
 function attachLocalStream() {
   const preview = document.getElementById('webcamPreview');
   const video = document.getElementById('videoPlayer');
-  preview.srcObject = mediaStream;
-  preview.classList.remove('hidden');
+  if (preview) {
+    preview.srcObject = mediaStream;
+    preview.classList.remove('hidden');
+  }
 
-  video.srcObject = mediaStream;
-  video.classList.remove('hidden');
-  document.getElementById('iframePlayer').classList.add('hidden');
-  document.getElementById('playerOverlay').classList.add('hidden');
-  document.getElementById('statProto').textContent = 'WEBRTC / LOCAL MEDIA';
+  if (video) {
+    video.srcObject = mediaStream;
+    video.classList.remove('hidden');
+    const iframe = document.getElementById('iframePlayer');
+    const overlay = document.getElementById('playerOverlay');
+    if (iframe) iframe.classList.add('hidden');
+    if (overlay) overlay.classList.add('hidden');
+    document.getElementById('statProto').textContent = 'BROWSER WEBRTC (ZERO OBS)';
+  }
 
   setBroadcastStatus(true);
+  studioBroadcastChannel.postMessage({ type: 'LIVE_STATE_CHANGE', isLive: true });
 }
 
 function stopLocalStream() {
@@ -253,10 +324,12 @@ function stopLocalStream() {
     mediaStream = null;
   }
   const preview = document.getElementById('webcamPreview');
-  preview.srcObject = null;
-  preview.classList.add('hidden');
+  if (preview) {
+    preview.srcObject = null;
+    preview.classList.add('hidden');
+  }
   loadChannel(activeChannel);
-  showToast('⏹ Local stream stopped.', 'success');
+  showToast('⏹ Zero-OBS Local Stream Stopped.', 'success');
 }
 
 // ─── Multi-Destination Restreaming ────────────────────────────────────────────

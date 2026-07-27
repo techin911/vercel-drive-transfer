@@ -166,16 +166,47 @@
             </div>
           </div>
 
-          <!-- Direct Web Cam / Screen Share Broadcaster -->
+          <!-- 100% Zero-OBS Web Studio Broadcaster Suite (No OBS Required) -->
           <div class="webcam-broadcaster-box">
             <div class="broadcaster-header">
-              <span>📹 Direct Browser Broadcaster (Stream Camera / Screen without OBS)</span>
+              <div class="title-with-badge">
+                <span>📹 Zero-OBS Web Studio Suite (Broadcast from Browser on any device)</span>
+                <span class="badge badge-ready">100% Vercel Native</span>
+              </div>
               <div class="broadcaster-buttons">
-                <button class="btn-sm btn-action" onclick="startCameraStream()">🎥 Start Camera</button>
+                <button class="btn-sm btn-action" onclick="startCameraStream()">🎥 Start WebCam</button>
                 <button class="btn-sm btn-action" onclick="startScreenShare()">🖥️ Share Screen</button>
-                <button class="btn-sm btn-danger-sm" onclick="stopLocalStream()">⏹ Stop Cam/Screen</button>
+                <button id="btnMuteMic" class="btn-sm btn-action" onclick="toggleMicrophoneMute()">🎙️ Mute Mic</button>
+                <button class="btn-sm btn-danger-sm" onclick="stopLocalStream()">⏹ Stop Stream</button>
               </div>
             </div>
+
+            <!-- Zero-OBS Studio Device & Quality Controls -->
+            <div class="studio-controls-row">
+              <div class="input-group">
+                <label class="input-label">Select WebCam / Phone Camera</label>
+                <select id="studioCamSelect" class="select-input" onchange="startCameraStream()">
+                  <option value="">Default WebCam / Phone Camera</option>
+                </select>
+              </div>
+
+              <div class="input-group">
+                <label class="input-label">Select Microphone Audio</label>
+                <select id="studioMicSelect" class="select-input">
+                  <option value="">Default Microphone</option>
+                </select>
+              </div>
+
+              <div class="input-group">
+                <label class="input-label">Broadcast Quality</label>
+                <select id="studioQualitySelect" class="select-input">
+                  <option value="720p" selected>720p 30fps (HD Recommended)</option>
+                  <option value="1080p">1080p 60fps (Full HD)</option>
+                  <option value="480p">480p 30fps (Low Data Mobile)</option>
+                </select>
+              </div>
+            </div>
+
             <video id="webcamPreview" autoplay muted playsinline class="webcam-preview hidden"></video>
           </div>
 

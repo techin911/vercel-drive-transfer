@@ -133,8 +133,10 @@ video, iframe.iframe-player { width: 100%; height: 100%; object-fit: contain; di
   padding: 14px; margin-bottom: 16px;
 }
 .broadcaster-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; font-weight: 600; color: var(--cyan); }
-.broadcaster-buttons { display: flex; gap: 8px; }
-.webcam-preview { width: 100%; max-height: 240px; background: #000; border-radius: 8px; margin-top: 12px; object-fit: contain; }
+.broadcaster-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.studio-controls-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px; }
+@media (max-width: 768px) { .studio-controls-row { grid-template-columns: 1fr; } }
+.webcam-preview { width: 100%; max-height: 280px; background: #000; border-radius: 8px; margin-top: 12px; object-fit: contain; }
 
 /* Restream Grid */
 .restream-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
