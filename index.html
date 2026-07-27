@@ -126,9 +126,15 @@
           <div class="input-group">
             <label class="input-label" for="inputFlvUrl">Live Stream Playback URL (HTTP-FLV / HLS)</label>
             <div class="input-with-btn">
-              <input type="text" id="inputFlvUrl" class="text-input" value="http://localhost:8080/live/stream.flv" />
+              <input type="text" id="inputFlvUrl" class="text-input" value="https://rtmp-live-server.onrender.com/live/stream.flv" />
               <button class="btn-primary-sm" onclick="applyPlaybackUrl()">Connect</button>
             </div>
+          </div>
+
+          <div class="quick-preset-row" style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+            <span class="preset-label" style="font-size:12px;color:var(--text-muted);font-weight:600;">Server Presets:</span>
+            <button class="btn-preset" onclick="setPreset('render')" style="padding:4px 10px;border-radius:6px;background:rgba(0,242,254,0.15);border:1px solid rgba(0,242,254,0.3);color:var(--accent-cyan);font-size:11px;font-weight:700;cursor:pointer;">🌐 Public Cloud Server</button>
+            <button class="btn-preset" onclick="setPreset('localhost')" style="padding:4px 10px;border-radius:6px;background:rgba(255,255,255,0.1);border:1px solid var(--bg-card-border);color:var(--text-main);font-size:11px;font-weight:600;cursor:pointer;">💻 Local Nginx Server</button>
           </div>
         </div>
 

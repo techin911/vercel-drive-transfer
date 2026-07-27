@@ -28,6 +28,26 @@ window.toggleMute = toggleMute;
 window.toggleFullscreen = toggleFullscreen;
 window.copyInput = copyInput;
 window.applyPlaybackUrl = applyPlaybackUrl;
+window.setPreset = setPreset;
+
+function setPreset(type) {
+  const rtmpInput = document.getElementById('inputRtmpUrl');
+  const flvInput = document.getElementById('inputFlvUrl');
+  
+  if (type === 'render') {
+    if (rtmpInput) rtmpInput.value = 'rtmp://rtmp-live-server.onrender.com/live';
+    if (flvInput) flvInput.value = 'https://rtmp-live-server.onrender.com/live/stream.flv';
+    currentFlvUrl = 'https://rtmp-live-server.onrender.com/live/stream.flv';
+    showToast('🌐 Switched to Public Cloud RTMP Server', 'success');
+  } else {
+    if (rtmpInput) rtmpInput.value = 'rtmp://localhost/live';
+    if (flvInput) flvInput.value = 'http://localhost:8080/live/stream.flv';
+    currentFlvUrl = 'http://localhost:8080/live/stream.flv';
+    showToast('💻 Switched to Local Nginx RTMP Server', 'success');
+  }
+  localStorage.setItem('flv_playback_url', currentFlvUrl);
+  initRtmpPlayer(currentFlvUrl);
+}
 
 // ─── RTMP Live Player Engine (mpegts.js / Hls.js) ─────────────────────────────
 function initRtmpPlayer(url) {
